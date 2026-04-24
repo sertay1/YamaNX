@@ -1,7 +1,7 @@
 # YamaNX - Nintendo Switch Türkçe Yama Yükleyicisi
 
 <p align="center">
-  <img src="gorseller/icon.jpg" alt="YamaNX Icon" width="180"/>
+  <img src="Screenshots/icon.jpg" alt="YamaNX Icon" width="180"/>
   <br>
   <i>Nintendo Switch için oyunlarınızı Türkçeleştirmenin en kolay yolu.</i>
 </p>
@@ -11,11 +11,11 @@
 ## 📸 Uygulama Ekran Görüntüleri
 
 <p align="center">
-  <img src="gorseller/YamaNX_Tum_Yamalar.jpg" width="400" alt="Tüm Yamalar"/>
-  <img src="gorseller/YamaNX_Yukleme_Ekrani.jpg" width="400" alt="Yükleme Ekranı"/>
+  <img src="Screenshots/YamaNX_Tum_Yamalar.jpg" width="400" alt="Tüm Yamalar"/>
+  <img src="Screenshots/YamaNX_Yukleme_Ekrani.jpg" width="400" alt="Yükleme Ekranı"/>
   <br><br>
-  <img src="gorseller/YamaNX_Yama_Kaldirma.jpg" width="400" alt="Yama Kaldırma"/>
-  <img src="gorseller/YamaNX_Hakkinda.jpg" width="400" alt="Hakkında"/>
+  <img src="Screenshots/YamaNX_Yama_Kaldirma.jpg" width="400" alt="Yama Kaldırma"/>
+  <img src="Screenshots/YamaNX_Hakkinda.jpg" width="400" alt="Hakkında"/>
 </p>
 
 ---
@@ -59,7 +59,7 @@ Arşivdeki Türkçe yamaların yapımcısı ben değilim. Bu devasa arşiv; **Sw
 
 | Linkler | QR Kod |
 | :--- | :--- |
-| **Discord:** [Piksel Kardeşliği](https://discord.gg/2q9WVb64Kx) <br> **Instagram:** [@cilsertay](https://instagram.com/cilsertay) | <img src="gorseller/qr_sertay_discord.png" width="120"/> |
+| **Discord:** [Piksel Kardeşliği](https://discord.gg/2q9WVb64Kx) <br> **Instagram:** [@cilsertay](https://instagram.com/cilsertay) | <img src="Screenshots/qr_sertay_discord.png" width="120"/> |
 
 ---
 
@@ -68,8 +68,8 @@ Arşivdeki Türkçe yamaların yapımcısı ben değilim. Bu devasa arşiv; **Sw
 
 | Linkler | QR Kodlar |
 | :--- | :--- |
-| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | <img src="gorseller/qr_swatalk_discord.png" width="120"/> |
-| **Bağış (Shopier):** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <img src="gorseller/qr_swatalk_donate.png" width="120"/> |
+| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | <img src="Screenshots/qr_swatalk_discord.png" width="120"/> |
+| **Bağış (Shopier):** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <img src="Screenshots/qr_swatalk_donate.png" width="120"/> |
 
 <br>
 <p align="center">İyi oyunlar! &lt;3</p>
