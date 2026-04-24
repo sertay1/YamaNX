@@ -69,7 +69,7 @@ Arşivdeki Türkçe yamaların yapımcısı ben değilim. Bu devasa arşiv; **Sw
 | Linkler | QR Kodlar |
 | :--- | :--- |
 | **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | <img src="screenshots/qr_swatalk_discord.png" width="120"/> |
-| **Bağış (Shopier):** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <img src="screenshots/qr_swatalk_donate.png" width="120"/> |
+| **Bağış:** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <img src="screenshots/qr_swatalk_donate.png" width="120"/> |
 
 <br>
 <p align="center">İyi oyunlar! &lt;3</p>
