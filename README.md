@@ -36,7 +36,7 @@ YamaNX uygulamasını, daha önce hiçbir yazılım tecrübem olmadan tamamen ya
 ## 🚀 Kurulum ve Kullanım
 
 1. [Releases](../../releases) sayfasından en güncel `YamaNX.nro` dosyasını indirin.
-2. SD kartınızdaki `switch/` klasörünün içine bu dosyayı atın. *(Eğer klasör yoksa oluşturun: `SD:/switch/YamaNX.nro`)*
+2. SD kartınızdaki `switch/` klasörünün içine bu dosyayı atın. *(Eğer klasör yoksa oluşturun: `SD:/switch`)*
 3. Switch üzerinden **Homebrew Menu**'ye (hbmenu) girip YamaNX uygulamasını çalıştırın.
 
 💡 **Önemli Not (Büyük Boyutlu Yamalar İçin):**
