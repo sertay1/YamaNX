@@ -4,12 +4,6 @@
   <img src="screenshots/icon.jpg" alt="YamaNX Icon" width="180"/>
   <br>
   <i>Nintendo Switch için oyunlarınızı Türkçeleştirmenin en kolay yolu.</i>
-  <br><br>
-  <a href="https://hb-app.store/switch/YamaNXTurkishPatcher">
-    <img src="screenshots/hbappstore.png" alt="HB Store İndirme Linki" width="250"/>
-    <br>
-    HB Store İndirme Linki
-  </a>
 </p>
 
 ---
@@ -38,6 +32,22 @@ YamaNX uygulamasını, daha önce hiçbir yazılım tecrübem olmadan tamamen ya
 - **Otomatik Kurulum**: Seçtiğiniz oyunun yamasını tek tıkla indirir ve SD kartınızdaki doğru klasöre (`atmosphere/contents` veya `titles`) otomatik olarak çıkartır.
 - **Dinamik Veri Çekme**: Yamalar sürekli güncel kalacak şekilde çevrimiçi olarak listelenir.
 - **Hızlı Erişim**: Hakkında menüsünde yer alan QR kodlar ile Discord sunucusuna veya geliştirici sayfalarına hızlıca ulaşın.
+
+---
+
+## 📥 İndirme
+
+Uygulamayı **Homebrew App Store** üzerinden kolayca indirebilirsiniz:
+
+<p align="center">
+  <a href="https://hb-app.store/switch/YamaNXTurkishPatcher">
+    <img src="screenshots/hbappstore.png" alt="HB Store İndirme Linki" width="300"/>
+    <br>
+    <b>HB Store İndirme Linki</b>
+  </a>
+</p>
+
+---
 
 ## 🚀 Kurulum ve Kullanım
 
