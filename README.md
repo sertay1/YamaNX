@@ -35,9 +35,14 @@ YamaNX uygulamasını, daha önce hiçbir yazılım tecrübem olmadan tamamen ya
 
 ---
 
-## 📥 İndirme
+## 🚀 Kurulum ve Kullanım
 
-Uygulamayı **Homebrew App Store** üzerinden kolayca indirebilirsiniz:
+### 1. Yöntem: Homebrew App Store (Otomatik Kurulum)
+Uygulamayı doğrudan Switch üzerinden **HB App Store** aracılığıyla indirip kurabilirsiniz. Bu en kolay ve önerilen yöntemdir.
+
+1. Switch'inizde **Homebrew App Store**'u açın.
+2. Arama kısmına **"YamaNX"** yazın.
+3. Uygulamayı seçip **Download** butonuna basın.
 
 <p align="center">
   <a href="https://hb-app.store/switch/YamaNXTurkishPatcher">
@@ -49,7 +54,8 @@ Uygulamayı **Homebrew App Store** üzerinden kolayca indirebilirsiniz:
 
 ---
 
-## 🚀 Kurulum ve Kullanım
+### 2. Yöntem: Manuel Kurulum
+Uygulamayı bilgisayarınız üzerinden indirip SD kartınıza atarak kurabilirsiniz.
 
 1. [Releases](../../releases) sayfasından en güncel `YamaNX.nro` dosyasını indirin.
 2. SD kartınızdaki `switch/` klasörünün içine bu dosyayı atın. *(Eğer klasör yoksa oluşturun: `SD:/switch`)*
