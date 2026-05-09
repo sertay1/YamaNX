@@ -85,7 +85,7 @@ Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücret
 
 | Linkler | QR Kod |
 | :--- | :--- |
-| **SertAy Tüm Linkler:** [Linktree Sayfamız](https://linktr.ee/yamanx) | [![QR](romfs/qr_SertAyTumLinkler.png)](https://linktr.ee/yamanx) |
+| **SertAy Tüm Linkler:** [Linktree Sayfamız](https://linktr.ee/yamanx) | <a href="https://linktr.ee/yamanx"><img src="romfs/qr_SertAyTumLinkler.png" width="120"/></a> |
 
 ---
 
@@ -94,23 +94,23 @@ Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücret
 
 | Linkler | QR Kodlar |
 | :--- | :--- |
-| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | [![QR](romfs/qr_swatalk_discord.png)](https://discord.com/invite/xshWw2jBK6) |
-| **Bağış:** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | [![QR](romfs/qr_swatalk_donate.png)](https://www.shopier.com/Traltyazi) |
+| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | <a href="https://discord.com/invite/xshWw2jBK6"><img src="romfs/qr_swatalk_discord.png" width="120"/></a> |
+| **Bağış:** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <a href="https://www.shopier.com/Traltyazi"><img src="romfs/qr_swatalk_donate.png" width="120"/></a> |
 
 ---
 
 ### 👑 Soner Çakır (Yama Çevirmeni)
 | Linkler | QR Kod |
 | :--- | :--- |
-| **Discord Sunucusu:** [Katılmak İçin Tıklayın](SONER_DISCORD_LINK) | [![QR](romfs/qr_sonercakir_discord.png)](SONER_DISCORD_LINK) |
+| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/tB93ZUsRYE) | <a href="https://discord.com/invite/tB93ZUsRYE"><img src="romfs/qr_sonercakir_discord.png" width="120"/></a> |
 
 ---
 
 ### 👑 SinnerClown Çeviri
 | Linkler | QR Kodlar |
 | :--- | :--- |
-| **Discord Sunucusu:** [Katılmak İçin Tıklayın](SINNERCLOWN_DISCORD_LINK) | [![QR](romfs/qr_sinnerclown_discord.png)](SINNERCLOWN_DISCORD_LINK) |
-| **Web Sitesi:** [Siteyi Ziyaret Et](SINNERCLOWN_SITE_LINK) | [![QR](romfs/qr_sinnerclown_site.png)](SINNERCLOWN_SITE_LINK) |
+| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/nApvcT6Tt6) | <a href="https://discord.com/invite/nApvcT6Tt6"><img src="romfs/qr_sinnerclown_discord.png" width="120"/></a> |
+| **Web Sitesi:** [Siteyi Ziyaret Et](https://sinnerclownceviri.net/forumlar/nintendo-tuerkce-yama.74/) | <a href="https://sinnerclownceviri.net/forumlar/nintendo-tuerkce-yama.74/"><img src="romfs/qr_sinnerclown_site.png" width="120"/></a> |
 
 <br>
 <p align="center">İyi oyunlar! &lt;3</p>
