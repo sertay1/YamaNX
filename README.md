@@ -85,7 +85,7 @@ Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücret
 
 | Linkler | QR Kod |
 | :--- | :--- |
-| **SertAy Tüm Linkler:** [Linktree Sayfamız](https://linktr.ee/yamanx) | <img src="romfs/qr_SertAyTumLinkler.png" width="120"/> |
+| **SertAy Tüm Linkler:** [Linktree Sayfamız](https://linktr.ee/yamanx) | [![QR](romfs/qr_SertAyTumLinkler.png)](https://linktr.ee/yamanx) |
 
 ---
 
@@ -94,23 +94,23 @@ Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücret
 
 | Linkler | QR Kodlar |
 | :--- | :--- |
-| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | <img src="romfs/qr_swatalk_discord.png" width="120"/> |
-| **Bağış:** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <img src="romfs/qr_swatalk_donate.png" width="120"/> |
+| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | [![QR](romfs/qr_swatalk_discord.png)](https://discord.com/invite/xshWw2jBK6) |
+| **Bağış:** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | [![QR](romfs/qr_swatalk_donate.png)](https://www.shopier.com/Traltyazi) |
 
 ---
 
 ### 👑 Soner Çakır (Yama Çevirmeni)
 | Linkler | QR Kod |
 | :--- | :--- |
-| **Discord Sunucusu:** QR Kodu Okutarak Katılabilirsiniz | <img src="romfs/qr_sonercakir_discord.png" width="120"/> |
+| **Discord Sunucusu:** [Katılmak İçin Tıklayın](SONER_DISCORD_LINK) | [![QR](romfs/qr_sonercakir_discord.png)](SONER_DISCORD_LINK) |
 
 ---
 
 ### 👑 SinnerClown Çeviri
 | Linkler | QR Kodlar |
 | :--- | :--- |
-| **Discord Sunucusu:** QR Kodu Okutarak Katılabilirsiniz | <img src="romfs/qr_sinnerclown_discord.png" width="120"/> |
-| **Web Sitesi:** QR Kodu Okutarak Ziyaret Edebilirsiniz | <img src="romfs/qr_sinnerclown_site.png" width="120"/> |
+| **Discord Sunucusu:** [Katılmak İçin Tıklayın](SINNERCLOWN_DISCORD_LINK) | [![QR](romfs/qr_sinnerclown_discord.png)](SINNERCLOWN_DISCORD_LINK) |
+| **Web Sitesi:** [Siteyi Ziyaret Et](SINNERCLOWN_SITE_LINK) | [![QR](romfs/qr_sinnerclown_site.png)](SINNERCLOWN_SITE_LINK) |
 
 <br>
 <p align="center">İyi oyunlar! &lt;3</p>
