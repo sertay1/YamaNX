@@ -28,10 +28,11 @@ YamaNX uygulamasını, daha önce hiçbir yazılım tecrübem olmadan tamamen ya
 
 ## ✨ Özellikler
 
-- **Kullanıcı Dostu Arayüz**: Borealis UI kullanılarak tasarlanmış modern, şık ve akıcı Switch arayüzü.
-- **Otomatik Kurulum**: Seçtiğiniz oyunun yamasını tek tıkla indirir ve SD kartınızdaki doğru klasöre (`atmosphere/contents` veya `titles`) otomatik olarak çıkartır.
+- **Özel Geliştirilmiş Arayüz (SDL2)**: SDL2 ile tasarlanmış ultra hızlı, akıcı, modern ve özelleştirilebilir bir Switch arayüzü. Joy-Con ve Dokunmatik Ekran ile kusursuz çalışır.
+- **Otomatik Kurulum**: Seçtiğiniz oyunun yamasını tek tıkla indirir ve SD kartınızdaki doğru klasöre otomatik olarak çıkartır.
 - **Dinamik Veri Çekme**: Yamalar sürekli güncel kalacak şekilde çevrimiçi olarak listelenir.
-- **Hızlı Erişim**: Hakkında menüsünde yer alan QR kodlar ile Discord sunucusuna veya geliştirici sayfalarına hızlıca ulaşın.
+- **Arama ve Filtreleme**: Entegre Switch klavyesi desteği ile devasa arşiv içinde istediğiniz oyunu anında arayıp bulabilirsiniz.
+- **Hızlı Erişim**: Hakkında sayfası sayesinde Bağış ve Discord gibi sayısız geliştirici QR koduna tek bir yerden saniyeler içinde ulaşın.
 
 ---
 
@@ -60,11 +61,18 @@ Uygulamayı bilgisayarınız üzerinden indirip SD kartınıza atarak kurabilirs
 💡 **Önemli Not:**
 Nintendo Switch üzerinden doğrudan büyük boyutlu yama dosyalarını indirmek, konsolun Wi-Fi hız limitleri nedeniyle bazen uzun sürebilir. Daha hızlı bir alternatif olarak; **Benim ve Swatalk'ın Discord sunucusuna** katılıp yamaları bilgisayarınıza indirebilir ve bir Type-C kablo yardımıyla Switch'inize manuel olarak kurabilirsiniz.
 
+**YamaNX Manifest Oluşturucu Kullanımı**
+
+Büyük boyutlu yamaları bilgisayardan indirip SD kartınıza elinizle attığınızda, YamaNX o yamayı kendisi indirmediği için yüklü olduğunu fark edemez ve uygulamada "Yüklü Değil" yazar.
+Bunu düzeltmek için:
+YamaNX_Manifest_Oluşturucu.bat dosyasını PC'deki yama klasörünün (0100X...) içine atıp çift tıklayın.
+İşlem bitince klasörün içinde oluşan YamaNX_manifest.txt belgesiyle birlikte yamanızı Switch'inize kopyalayın.)
+
 ---
 
 ## 🗄️ Yama Arşivi Hakkında
 
-Arşivdeki Türkçe yamaların yapımcısı ben değilim. Bu devasa arşiv; **Swatalk** adlı arkadaşımızın tamamen ücretsiz olarak sunduğu +470 adet yama ile benim internetten uzun uğraşlar sonucu topladığım yamaların birleşiminden oluşmaktadır. 
+Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücretsiz yaması ile Soner Çakır, Sinnerclown, Profesör Pikachu, Dede00, emre, davetsiz57 gibi pek çok çevirmen arkadaşın internetten derlediğim çalışmaları yer alıyor. Tespit edebildiğim tüm isimleri oyun seçim ekranına ekledim.
 
 İçerikteki çoğu oyunun yaması ve emeği **Swatalk**'a aittir. Muazzam emekleri için kendisine oyuncu topluluğu adına çok teşekkür ederim.
 
