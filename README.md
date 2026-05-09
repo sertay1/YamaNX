@@ -85,7 +85,7 @@ Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücret
 
 | Linkler | QR Kod |
 | :--- | :--- |
-| **Discord:** [Piksel Kardeşliği](https://discord.gg/2q9WVb64Kx) <br> **Instagram:** [@cilsertay](https://instagram.com/cilsertay) | <img src="screenshots/qr_sertay_discord.png" width="120"/> |
+| **SertAy Tüm Linkler:** [Linktree Sayfamız](https://linktr.ee/yamanx) | <img src="romfs/qr_SertAyTumLinkler.png" width="120"/> |
 
 ---
 
@@ -94,8 +94,23 @@ Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücret
 
 | Linkler | QR Kodlar |
 | :--- | :--- |
-| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | <img src="screenshots/qr_swatalk_discord.png" width="120"/> |
-| **Bağış:** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <img src="screenshots/qr_swatalk_donate.png" width="120"/> |
+| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | <img src="romfs/qr_swatalk_discord.png" width="120"/> |
+| **Bağış:** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <img src="romfs/qr_swatalk_donate.png" width="120"/> |
+
+---
+
+### 👑 Soner Çakır (Yama Çevirmeni)
+| Linkler | QR Kod |
+| :--- | :--- |
+| **Discord Sunucusu:** QR Kodu Okutarak Katılabilirsiniz | <img src="romfs/qr_sonercakir_discord.png" width="120"/> |
+
+---
+
+### 👑 SinnerClown Çeviri
+| Linkler | QR Kodlar |
+| :--- | :--- |
+| **Discord Sunucusu:** QR Kodu Okutarak Katılabilirsiniz | <img src="romfs/qr_sinnerclown_discord.png" width="120"/> |
+| **Web Sitesi:** QR Kodu Okutarak Ziyaret Edebilirsiniz | <img src="romfs/qr_sinnerclown_site.png" width="120"/> |
 
 <br>
 <p align="center">İyi oyunlar! &lt;3</p>
