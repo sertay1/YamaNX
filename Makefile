@@ -40,7 +40,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 TARGET		:=	YamaNX
 APP_TITLE	:=	YamaNX
 APP_AUTHOR	:=	SertAy
-APP_VERSION	:=	1.0.0
+APP_VERSION	:=	1.1.0
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
