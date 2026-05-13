@@ -74,7 +74,7 @@ YamaNX_Manifest_Oluşturucu.bat dosyasını PC'deki yama klasörünün (0100X...
 
 Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücretsiz yaması ile Soner Çakır, Sinnerclown, Profesör Pikachu, Dede00, emre, davetsiz57 gibi pek çok çevirmen arkadaşın internetten derlediğim çalışmaları yer alıyor. Tespit edebildiğim tüm isimleri oyun seçim ekranına ekledim.
 
-İçerikteki çoğu oyunun yaması ve emeği **Swatalk**'a aittir. Muazzam emekleri için kendisine oyuncu topluluğu adına çok teşekkür ederim.
+Yama çevirmenlerinin muazzam emekleri için kendilerine oyuncu topluluğu adına çok teşekkür ederim.
 
 ---
 
@@ -85,7 +85,7 @@ Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücret
 
 | Linkler | QR Kod |
 | :--- | :--- |
-| **SertAy Tüm Linkler:** [Linktree Sayfamız](https://linktr.ee/yamanx) | <a href="https://linktr.ee/yamanx"><img src="romfs/qr_SertAyTumLinkler.png" width="120"/></a> |
+| **SertAy Tüm Linkler:** [Linktree Sayfam](https://linktr.ee/yamanx) | <a href="https://linktr.ee/yamanx"><img src="romfs/qr_SertAyTumLinkler.png" width="120"/></a> |
 
 ---
 
