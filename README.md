@@ -95,7 +95,7 @@ Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücret
 | Linkler | QR Kodlar |
 | :--- | :--- |
 | **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | <a href="https://discord.com/invite/xshWw2jBK6"><img src="romfs/qr_swatalk_discord.png" width="120"/></a> |
-| **Bağış:** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <a href="https://www.shopier.com/Traltyazi"><img src="romfs/qr_swatalk_donate.png" width="120"/></a> |
+| **Destek:** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <a href="https://www.shopier.com/Traltyazi"><img src="romfs/qr_swatalk_donate.png" width="120"/></a> |
 
 ---
 
