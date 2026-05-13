@@ -78,7 +78,7 @@ Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücret
 
 ---
 
-## 🔗 İletişim, Destek ve Bağış
+## 🔗 İletişim ve Destek
 
 ### 🛡️ SertAy (YamaNX Geliştiricisi)
 *Uygulama hataları ve arşivdeki eksik yamaların eklenmesi için:*
