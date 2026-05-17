@@ -78,6 +78,12 @@ Yama çevirmenlerinin muazzam emekleri için kendilerine oyuncu topluluğu adın
 
 ---
 
+## 🖥️ PC Emülatör Versiyonu
+
+Çok fazla talep olduğundan dolayı PC'deki emülatörler için .nro uygulamasını exe olarak derledim. Ryujinx, Yuzu, Citron ve Eden'ı destekliyor. [YamaNX.PC.exe'yi](../../releases) kurarak direkt kullanabilirsiniz. Ryujinx'te test edildi ve şuan çalışıyor gibi duruyor. Eğer bir sorun yaşarsanız iletişime geçebilirsiniz.
+
+---
+
 ## 🔗 İletişim ve Destek
 
 ### 🛡️ SertAy (YamaNX Geliştiricisi)
