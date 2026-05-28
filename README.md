@@ -80,13 +80,13 @@ Yama çevirmenlerinin muazzam emekleri için kendilerine oyuncu topluluğu adın
 
 ## 🖥️ PC Emülatör Versiyonu
 
-Çok fazla talep olduğundan dolayı PC'deki emülatörler için .nro uygulamasını exe olarak derledim. Ryujinx, Yuzu, Citron ve Eden'ı destekliyor. [YamaNX.PC.exe'yi](../../releases) kurarak direkt kullanabilirsiniz. Ryujinx'te test edildi ve şuan çalışıyor gibi duruyor.
+PC'deki emülatörler için .nro uygulamasını exe olarak derledim. Ryujinx, Yuzu, Citron ve Eden'ı destekliyor. [YamaNX.PC.exe'yi](../../releases) kurarak direkt kullanabilirsiniz. Ryujinx'te test edildi.
 
 ---
 
 ## 📱 YamaNX Android Versiyonu
 
-Android cihazlar için APK formatını derledim. Eden emülatörüyle uyumlu çalışıyor. Sadece YamaNX.apk dosyasını cihazınıza kurmanız yeterli.
+Android cihazlar için APK formatını derledim. Eden emülatörüyle uyumlu çalışıyor. Sadece [YamaNX.apk'yı](../../releases) cihazınıza kurmanız yeterli.
 
 ---
 
