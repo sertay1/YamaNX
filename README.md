@@ -84,7 +84,7 @@ Yama çevirmenlerinin muazzam emekleri için kendilerine oyuncu topluluğu adın
 
 ---
 
-📱 YamaNX Android Versiyonu
+## 📱 YamaNX Android Versiyonu
 
 Android cihazlar için APK formatını derledim. Eden emülatörüyle uyumlu çalışıyor. Sadece YamaNX.apk dosyasını cihazınıza kurmanız yeterli.
 
