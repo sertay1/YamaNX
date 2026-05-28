@@ -84,7 +84,7 @@ PC'deki emülatörler için .nro uygulamasını exe olarak derledim. Ryujinx, Yu
 
 ---
 
-## 📱 YamaNX Android Versiyonu
+## 📱 Android Emülatör Versiyonu
 
 Android cihazlar için APK formatını derledim. Eden emülatörüyle uyumlu çalışıyor. Sadece [YamaNX.apk'yı](../../releases) cihazınıza kurmanız yeterli.
 
