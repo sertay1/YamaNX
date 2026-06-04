@@ -58,6 +58,10 @@ Uygulamayı bilgisayarınız üzerinden indirip SD kartınıza atarak kurabilirs
 2. SD kartınızdaki `switch/` klasörünün içine bu dosyayı atın. *(Eğer klasör yoksa oluşturun: `SD:/switch`)*
 3. Switch üzerinden **Homebrew Menu**'ye (hbmenu) girip YamaNX uygulamasını çalıştırın.
 
+### 3. Uygulamayı Nasıl Açacaksınız?
+
+Uygulamayı tam performansla (Applet modu olmadan) kullanabilmek için bir oyunu başlatırken 'R' tuşuna basılı tutarak açabilirsiniz. Alternatif olarak, NSP sürümünü yükleyerek uygulamayı tıpkı normal bir oyun gibi doğrudan Switch ana ekranından da başlatabilirsiniz. **(Applet mode hbmenu'den açarsanız Switchiniz %90 ihtimalle crash verecektir)**
+
 💡 **Önemli Not:**
 Nintendo Switch üzerinden doğrudan büyük boyutlu yama dosyalarını indirmek, konsolun Wi-Fi hız limitleri nedeniyle bazen uzun sürebilir. Daha hızlı bir alternatif olarak; **Benim ve Swatalk'ın Discord sunucusuna** katılıp yamaları bilgisayarınıza indirebilir ve bir Type-C kablo yardımıyla Switch'inize manuel olarak kurabilirsiniz.
 
