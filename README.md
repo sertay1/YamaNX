@@ -78,6 +78,11 @@ Yama çevirmenlerinin muazzam emekleri için kendilerine oyuncu topluluğu adın
 
 ---
 
+## ⭐ YamaNX NSP Versiyonu
+Bu [YamaNX.nsp](../../releases) versiyonu, Applet modunda HBmenu'ye girmeye gerek kalmadan, YamaNX'i doğrudan Switch ana menüsünden tıpkı bir oyun gibi başlatmanızı sağlar. (YamaNX.nro'nun Switch'inizde SdCard/switch içinde yüklü olması gerekmektedir.)
+
+---
+
 ## 🖥️ PC Emülatör Versiyonu
 
 PC'deki emülatörler için .nro uygulamasını exe olarak derledim. Ryujinx, Yuzu, Citron ve Eden'ı destekliyor. [YamaNX.PC.exe'yi](../../releases) kurarak direkt kullanabilirsiniz. Ryujinx'te test edildi.
