@@ -11,11 +11,11 @@
 ## 📸 Uygulama Ekran Görüntüleri
 
 <p align="center">
-  <img src="screenshots/YamaNX_Tum_Yamalar.jpg" width="400" alt="Tüm Yamalar"/>
-  <img src="screenshots/YamaNX_Yama_indirvekur.jpg" width="400" alt="Yükleme Ekranı"/>
+  <img src="screenshots/tumyamalar.png" width="400" alt="Tüm Yamalar"/>
+  <img src="screenshots/indirvekur.png" width="400" alt="Yükleme Ekranı"/>
   <br><br>
-  <img src="screenshots/YamaNX_Yuklu_Icerikler.jpg" width="400" alt="Yama Kaldırma"/>
-  <img src="screenshots/YamaNX_Hakkinda.jpg" width="400" alt="Hakkında"/>
+  <img src="screenshots/yukluicerikler.png" width="400" alt="Yama Kaldırma"/>
+  <img src="screenshots/hakkinda.png" width="400" alt="Hakkında"/>
 </p>
 
 ---
@@ -43,7 +43,7 @@ Uygulamayı doğrudan Switch üzerinden **HB App Store** aracılığıyla indiri
 
 <p align="center">
   <a href="https://hb-app.store/switch/YamaNXTurkishPatcher">
-    <img src="screenshots/hbappstore.png" alt="HB Store İndirme Linki" width="300"/>
+    <img src="romfs/hbappstore.png" alt="HB Store İndirme Linki" width="300"/>
     <br>
     <b>HB Store İndirme Linki</b>
   </a>
