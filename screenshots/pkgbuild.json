@@ -1,0 +1,22 @@
+            "url": "https://github.com/sertay1/YamaNX/releases/download/v1.1.0/YamaNX.nro",
+            "type": "update",
+            "dest": "/switch/YamaNX/YamaNX.nro"
+        },
+        {
+            "type": "screenshot",
+            "url": "tumyamalar.png"
+        },
+        {
+            "type": "screenshot",
+            "url": "indirvekur.png"
+        },
+        {
+            "type": "screenshot",
+            "url": "yukluicerikler.png"
+        },
+        {
+            "type": "screenshot",
+            "url": "hakkinda.png"
+        }
+    ],
+    "changelog": ""
