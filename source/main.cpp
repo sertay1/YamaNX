@@ -50,7 +50,6 @@ SDL_Texture* texLogo = NULL;
 SDL_Texture* texSplash = NULL;
 SDL_Texture* texQR_SertAyTumLinkler = NULL;
 SDL_Texture* texQR_SwatalkDiscord = NULL;
-SDL_Texture* texQR_SwatalkDonate = NULL;
 SDL_Texture* texQR_SonerCakirDiscord = NULL;
 SDL_Texture* texQR_SinnerClownDiscord = NULL;
 SDL_Texture* texQR_SinnerClownSite = NULL;
@@ -644,6 +643,9 @@ int xferinfo(void *p, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, 
     return 0;
 }
 
+alignas(0x1000) char g_dl_iobuf[512 * 1024];
+alignas(0x1000) char g_ext_iobuf[512 * 1024];
+
 struct DownloadContext {
     FILE* current_fp = nullptr;
     int chunk_index = 0;
@@ -656,6 +658,7 @@ struct DownloadContext {
             sprintf(path, "sdmc:/YamaNX_temp.z%02d", chunk_index);
             current_fp = fopen(path, "wb");
             if (!current_fp) return false;
+            std::setvbuf(current_fp, g_dl_iobuf, _IOFBF, sizeof(g_dl_iobuf));
         }
         
         if (current_chunk_size + size > CHUNK_LIMIT) {
@@ -669,6 +672,7 @@ struct DownloadContext {
             sprintf(path, "sdmc:/YamaNX_temp.z%02d", chunk_index);
             current_fp = fopen(path, "wb");
             if (!current_fp) return false;
+            std::setvbuf(current_fp, g_dl_iobuf, _IOFBF, sizeof(g_dl_iobuf));
             
             size_t second_part = size - first_part;
             fwrite(data + first_part, 1, second_part, current_fp);
@@ -734,6 +738,7 @@ struct ExtractContext {
         sprintf(path, "sdmc:/YamaNX_temp.z%02d", index);
         current_fp = fopen(path, "rb");
         if (current_fp) {
+            std::setvbuf(current_fp, g_dl_iobuf, _IOFBF, sizeof(g_dl_iobuf));
             current_chunk_index = index;
             return true;
         }
@@ -920,6 +925,7 @@ bool extractZip(Patch& p, ExtractContext& ctx, const std::string& dest_dir, std:
             errorReason = "Dosya yazılamadı: " + relPath;
             break;
         }
+        std::setvbuf(outFp, g_ext_iobuf, _IOFBF, sizeof(g_ext_iobuf));
 
         const void *buff;
         size_t size;
@@ -976,6 +982,7 @@ void downloadThreadFunc(void* arg) {
     downloadProgress = 0;
     setDownloadStatus("Başlatılıyor...");
     appletSetMediaPlaybackState(true);
+    appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad);
     
     // Clean up old chunks if they exist
     for (int i=0; i<10; i++) {
@@ -1010,6 +1017,7 @@ void downloadThreadFunc(void* arg) {
             curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, xferinfo);
             curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+            curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 262144L); // 256 KB receive buffer
             
             // Hang prevention
             curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 50L); // 50 bytes/sec
@@ -1077,6 +1085,7 @@ void downloadThreadFunc(void* arg) {
         }
     
     appletSetMediaPlaybackState(false);
+    appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
     isDownloading = false;
 }
 
@@ -1207,7 +1216,6 @@ int main(int argc, char **argv) {
     texSplash = IMG_LoadTexture(renderer, "romfs:/splash.png");
     texQR_SertAyTumLinkler = IMG_LoadTexture(renderer, "romfs:/qr_SertAyTumLinkler.png");
     texQR_SwatalkDiscord = IMG_LoadTexture(renderer, "romfs:/qr_swatalk_discord.png");
-    texQR_SwatalkDonate = IMG_LoadTexture(renderer, "romfs:/qr_swatalk_donate.png");
     texQR_SonerCakirDiscord = IMG_LoadTexture(renderer, "romfs:/qr_sonercakir_discord.png");
     texQR_SinnerClownDiscord = IMG_LoadTexture(renderer, "romfs:/qr_sinnerclown_discord.png");
     texQR_SinnerClownSite = IMG_LoadTexture(renderer, "romfs:/qr_sinnerclown_site.png");
@@ -1460,10 +1468,15 @@ int main(int argc, char **argv) {
         selectedBoxX += (sTargetX - selectedBoxX) * 0.45f;
         selectedBoxY += (sTargetY - selectedBoxY) * 0.45f;
 
-        // Load Textures from thread
+        // Load Textures from thread (Saniyede max 120 kapak yükleyerek donmayı engelle)
         {
             std::lock_guard<std::mutex> lock(imageReadyMutex);
-            for (auto tid : readyImages) {
+            int loadedCount = 0;
+            while (!readyImages.empty() && loadedCount < 2) {
+                std::string tid = readyImages.back();
+                readyImages.pop_back();
+                loadedCount++;
+                
                 std::string p = "sdmc:/YamaNX_Covers/" + tid + ".jpg";
                 SDL_Texture* tex = IMG_LoadTexture(renderer, p.c_str());
                 if (tex) {
@@ -1473,7 +1486,6 @@ int main(int argc, char **argv) {
                     coverTextures[tid] = tex;
                 }
             }
-            readyImages.clear();
         }
 
         // --- DRAWING ---
@@ -1591,18 +1603,13 @@ int main(int argc, char **argv) {
             lineRGBA(renderer, bx - 10, currentY, bx + 870, currentY, 100, 100, 100, 255);
             currentY += 50;
 
-            // --- 2. Swatalk Discord & Bağış ---
-            drawTextCentered("Swatalk Discord", bx + 217, currentY, colorWhite, fontMid);
-            drawTextCentered("Swatalk Bağış", bx + 652, currentY, colorWhite, fontMid);
+            // --- 2. Swatalk Discord ---
+            drawTextCentered("Swatalk Discord", bx + 435, currentY, colorWhite, fontMid);
             currentY += 40;
             
             if (texQR_SwatalkDiscord) {
-                SDL_Rect rect1 = {bx + 217 - 90, currentY, 180, 180};
+                SDL_Rect rect1 = {bx + 435 - 90, currentY, 180, 180};
                 SDL_RenderCopy(renderer, texQR_SwatalkDiscord, NULL, &rect1);
-            }
-            if (texQR_SwatalkDonate) {
-                SDL_Rect rect2 = {bx + 652 - 90, currentY, 180, 180};
-                SDL_RenderCopy(renderer, texQR_SwatalkDonate, NULL, &rect2);
             }
             currentY += 220;
 
@@ -2001,7 +2008,6 @@ int main(int argc, char **argv) {
     if (texLogo) SDL_DestroyTexture(texLogo);
     if (texQR_SertAyTumLinkler) SDL_DestroyTexture(texQR_SertAyTumLinkler);
     if (texQR_SwatalkDiscord) SDL_DestroyTexture(texQR_SwatalkDiscord);
-    if (texQR_SwatalkDonate) SDL_DestroyTexture(texQR_SwatalkDonate);
     if (texQR_SonerCakirDiscord) SDL_DestroyTexture(texQR_SonerCakirDiscord);
     if (texQR_SinnerClownDiscord) SDL_DestroyTexture(texQR_SinnerClownDiscord);
     if (texQR_SinnerClownSite) SDL_DestroyTexture(texQR_SinnerClownSite);
