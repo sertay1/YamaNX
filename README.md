@@ -138,3 +138,12 @@ Android cihazlar için APK formatını derledim. Eden emülatörüyle uyumlu ça
 
 <br>
 <p align="center">İyi oyunlar! &lt;3</p>
+
+---
+
+## 📄 License / Lisans
+
+Tüm hakları saklıdır (All Rights Reserved) — © 2026 SertAy.  
+Bu projenin kodlarının kopyalanması, üzerinde değişiklik yapılması veya izinsiz dağıtılması yasaktır. Lütfen LICENSE dosyasını inceleyiniz.
+
+Copying, modifying, or unauthorized distribution of the code is strictly prohibited. Please see the LICENSE file for details.
