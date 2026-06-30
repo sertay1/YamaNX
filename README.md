@@ -1,4 +1,4 @@
-#      YamaNX - Nintendo Switch Türkçe Yama Yükleyicisi
+<h1 align="center">YamaNX - Nintendo Switch Türkçe Yama Yükleyicisi </h1>
 
 <p align="center">
   <img src="romfs/icon.jpg" alt="YamaNX Icon" width="180"/>
