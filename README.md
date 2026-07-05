@@ -80,7 +80,7 @@ YamaNX_Manifest_Oluşturucu.bat dosyasını PC'deki yama klasörünün (0100X...
 
 ## 🗄️ Yama Arşivi Hakkında
 
-Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücretsiz yaması ile Soner Çakır, Sinnerclown, Profesör Pikachu, Dede00, emre, davetsiz57 gibi pek çok çevirmen arkadaşın internetten derlediğim çalışmaları yer alıyor. Tespit edebildiğim tüm isimleri oyun seçim ekranına ekledim.
+Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücretsiz yaması ile Soner Çakır, Profesör Pikachu, Dede00, emre, davetsiz57 gibi pek çok çevirmen arkadaşın internetten derlediğim çalışmaları yer alıyor. Tespit edebildiğim tüm isimleri oyun seçim ekranına ekledim.
 
 Yama çevirmenlerinin muazzam emekleri için kendilerine oyuncu topluluğu adına çok teşekkür ederim.
 
