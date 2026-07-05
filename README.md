@@ -128,13 +128,6 @@ Android cihazlar için APK formatını derledim. Eden emülatörüyle uyumlu ça
 | :--- | :--- |
 | **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/tB93ZUsRYE) | <a href="https://discord.com/invite/tB93ZUsRYE"><img src="romfs/qr_sonercakir_discord.png" width="120"/></a> |
 
----
-
-### 👑 SinnerClown Çeviri
-| Linkler | QR Kodlar |
-| :--- | :--- |
-| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/nApvcT6Tt6) | <a href="https://discord.com/invite/nApvcT6Tt6"><img src="romfs/qr_sinnerclown_discord.png" width="120"/></a> |
-| **Web Sitesi:** [Siteyi Ziyaret Et](https://sinnerclownceviri.net/forumlar/nintendo-tuerkce-yama.74/) | <a href="https://sinnerclownceviri.net/forumlar/nintendo-tuerkce-yama.74/"><img src="romfs/qr_sinnerclown_site.png" width="120"/></a> |
 
 <br>
 <p align="center">İyi oyunlar! &lt;3</p>
