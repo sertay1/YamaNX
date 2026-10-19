@@ -28,6 +28,155 @@
 extern "C" { mode_t umask(mode_t mask) { return 022; } }
 
 #include "types.h"
+#include "updater.hpp"
+
+// --- Updater UI globals ---
+static std::string toastMessage = "";
+static int toastTimer = 0;
+static void showToast(const std::string& msg) {
+    toastMessage = msg;
+    toastTimer = 180; // ~3 saniye
+}
+
+static bool manualUpdateCheckRequested = false;
+static bool updateModalShownOnce = false;
+static bool pendingRelaunch = false;   // döngü bitince, temizlikten sonra envSetNextLoad
+static UpdateState prevUpdaterState = UpdateState::Idle;
+
+// Forward declaration
+void filterPatches();
+
+// --- Favorites and Sorting Globals & Helpers ---
+static std::set<std::string> g_favorites;
+static SortMode currentSortMode = SORT_NAME_ASC;
+static int sortModalSelection = 0;
+
+struct SortOption {
+    SortMode mode;
+    const char* label;
+    const char* shortLabel;
+};
+
+static const SortOption g_sortOptions[] = {
+    { SORT_NAME_ASC,  "İsim (A - Z)",                    "A-Z" },
+    { SORT_NAME_DESC, "İsim (Z - A)",                    "Z-A" },
+    { SORT_NEWEST,    "Yeniden Eskiye (Son Eklenenler)", "Yeniden Eskiye" },
+    { SORT_OLDEST,    "Eskiden Yeniye (İlk Eklenenler)", "Eskiden Yeniye" },
+    { SORT_SIZE_DESC, "Boyut (Büyükten Küçüğe)",         "Boyut: Büyük" },
+    { SORT_SIZE_ASC,  "Boyut (Küçükten Büyüğe)",         "Boyut: Küçük" },
+};
+
+static uint64_t parseSizeToBytes(const std::string& sizeStr) {
+    if (sizeStr.empty()) return 0;
+    char* end = nullptr;
+    double val = strtod(sizeStr.c_str(), &end);
+    if (val <= 0.0) return 0;
+    while (end && *end == ' ') end++;
+    if (!end || *end == '\0') return (uint64_t)val;
+    std::string unit = end;
+    std::transform(unit.begin(), unit.end(), unit.begin(), ::toupper);
+    if (unit.find("GB") != std::string::npos) {
+        return (uint64_t)(val * 1024.0 * 1024.0 * 1024.0);
+    } else if (unit.find("MB") != std::string::npos) {
+        return (uint64_t)(val * 1024.0 * 1024.0);
+    } else if (unit.find("KB") != std::string::npos) {
+        return (uint64_t)(val * 1024.0);
+    }
+    return (uint64_t)val;
+}
+
+static void loadFavorites() {
+    g_favorites.clear();
+    FILE* f = fopen("sdmc:/config/YamaNX/favorites.txt", "r");
+    if (!f) return;
+    char line[128];
+    while (fgets(line, sizeof(line), f)) {
+        std::string s(line);
+        while (!s.empty() && (s.back() == '\r' || s.back() == '\n' || s.back() == ' ')) s.pop_back();
+        while (!s.empty() && s.front() == ' ') s.erase(s.begin());
+        if (!s.empty()) {
+            std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+            g_favorites.insert(s);
+        }
+    }
+    fclose(f);
+}
+
+static void saveFavorites() {
+    mkdir("sdmc:/config", 0777);
+    mkdir("sdmc:/config/YamaNX", 0777);
+    FILE* f = fopen("sdmc:/config/YamaNX/favorites.txt", "w");
+    if (!f) return;
+    for (const auto& tid : g_favorites) {
+        fprintf(f, "%s\n", tid.c_str());
+    }
+    fclose(f);
+}
+
+static bool isFavorite(const std::string& tid) {
+    std::string utid = tid;
+    std::transform(utid.begin(), utid.end(), utid.begin(), ::toupper);
+    return g_favorites.count(utid) > 0;
+}
+
+static void loadSortMode() {
+    FILE* f = fopen("sdmc:/config/YamaNX/sort.txt", "r");
+    if (!f) return;
+    int m = 0;
+    if (fscanf(f, "%d", &m) == 1 && m >= 0 && m <= 5) {
+        currentSortMode = (SortMode)m;
+    }
+    fclose(f);
+}
+
+static void saveSortMode() {
+    mkdir("sdmc:/config", 0777);
+    mkdir("sdmc:/config/YamaNX", 0777);
+    FILE* f = fopen("sdmc:/config/YamaNX/sort.txt", "w");
+    if (!f) return;
+    fprintf(f, "%d\n", (int)currentSortMode);
+    fclose(f);
+}
+
+static void sortPatchesList(std::vector<Patch>& list, SortMode mode) {
+    switch (mode) {
+        case SORT_NAME_ASC:
+            std::stable_sort(list.begin(), list.end(), [](const Patch& a, const Patch& b) {
+                return a.normalized_name < b.normalized_name;
+            });
+            break;
+        case SORT_NAME_DESC:
+            std::stable_sort(list.begin(), list.end(), [](const Patch& a, const Patch& b) {
+                return a.normalized_name > b.normalized_name;
+            });
+            break;
+        case SORT_NEWEST:
+            std::stable_sort(list.begin(), list.end(), [](const Patch& a, const Patch& b) {
+                return a.original_index > b.original_index;
+            });
+            break;
+        case SORT_OLDEST:
+            std::stable_sort(list.begin(), list.end(), [](const Patch& a, const Patch& b) {
+                return a.original_index < b.original_index;
+            });
+            break;
+        case SORT_SIZE_DESC:
+            std::stable_sort(list.begin(), list.end(), [](const Patch& a, const Patch& b) {
+                if (a.size_bytes != b.size_bytes) return a.size_bytes > b.size_bytes;
+                return a.normalized_name < b.normalized_name;
+            });
+            break;
+        case SORT_SIZE_ASC:
+            std::stable_sort(list.begin(), list.end(), [](const Patch& a, const Patch& b) {
+                if (a.size_bytes != b.size_bytes) return a.size_bytes < b.size_bytes;
+                return a.normalized_name < b.normalized_name;
+            });
+            break;
+    }
+}
+
+// Font romfs yerine bellekten okunur; böylece kurulum sırasında romfsExit() güvenli olur.
+static std::vector<uint8_t> g_fontData;
 
 // --- globals ---
 std::vector<Patch> all_patches;
@@ -51,13 +200,39 @@ SDL_Texture* texSplash = NULL;
 SDL_Texture* texQR_SertAyTumLinkler = NULL;
 SDL_Texture* texQR_SwatalkDiscord = NULL;
 SDL_Texture* texQR_SonerCakirDiscord = NULL;
-SDL_Texture* texQR_SinnerClownDiscord = NULL;
-SDL_Texture* texQR_SinnerClownSite = NULL;
+std::atomic<bool> qrUpdated(false);
 
 ModalType activeModal = MODAL_NONE;
 // activePatch: raw pointer yerine güvenli kopya kullanılıyor
 static Patch activePatchCopy;
 static bool hasActivePatch = false;
+
+static void toggleFavorite(const std::string& tid) {
+    std::string utid = tid;
+    std::transform(utid.begin(), utid.end(), utid.begin(), ::toupper);
+    bool nowFav = false;
+    if (g_favorites.count(utid) > 0) {
+        g_favorites.erase(utid);
+        nowFav = false;
+        showToast("Favorilerden çıkarıldı.");
+    } else {
+        g_favorites.insert(utid);
+        nowFav = true;
+        showToast("Favorilere eklendi! ★");
+    }
+    saveFavorites();
+
+    for (auto& p : all_patches) {
+        if (p.title_id == utid) {
+            p.is_favorited = nowFav;
+            break;
+        }
+    }
+    if (hasActivePatch && activePatchCopy.title_id == utid) {
+        activePatchCopy.is_favorited = nowFav;
+    }
+    filterPatches();
+}
 std::atomic<bool> isDownloading(false);
 std::atomic<int> downloadProgress(0);
 std::string downloadStatusText = "";
@@ -354,12 +529,16 @@ void filterPatches() {
     for (auto& p : all_patches) {
         if (currentState == STATE_TUM_YAMALAR && isOfflineMode) continue;
         if (currentState == STATE_YUKLU_YAMALAR && !p.is_installed && !p.game_installed) continue;
+        if (currentState == STATE_FAVORILER && !p.is_favorited) continue;
         if (!searchQuery.empty()) {
             if (p.normalized_name.find(nSearch) == std::string::npos) continue;
         }
         filtered_patches.push_back(p);
     }
     
+    // Sıralama uygula
+    sortPatchesList(filtered_patches, currentSortMode);
+
     if (currentState == STATE_YUKLU_YAMALAR) {
         std::stable_sort(filtered_patches.begin(), filtered_patches.end(), [](const Patch& a, const Patch& b) {
             bool a_needs_patch = a.game_installed && !a.is_installed;
@@ -417,6 +596,84 @@ size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *user
     std::vector<uint8_t> *mem = (std::vector<uint8_t> *)userp;
     mem->insert(mem->end(), (uint8_t*)contents, ((uint8_t*)contents) + realsize);
     return realsize;
+}
+
+struct QRItem {
+    std::string filename;
+    std::string url;
+};
+
+static const std::vector<QRItem> qrList = {
+    {"qr_SertAyTumLinkler.png", "https://raw.githubusercontent.com/sertay1/YamaNX/main/romfs/qr_SertAyTumLinkler.png"},
+    {"qr_swatalk_discord.png", "https://raw.githubusercontent.com/sertay1/YamaNX/main/romfs/qr_swatalk_discord.png"},
+    {"qr_sonercakir_discord.png", "https://raw.githubusercontent.com/sertay1/YamaNX/main/romfs/qr_sonercakir_discord.png"}
+};
+
+SDL_Texture* loadQRTexture(SDL_Renderer* rnd, const std::string& filename) {
+    if (!rnd) return NULL;
+    std::string sdPath = "sdmc:/YamaNX_QR/" + filename;
+    struct stat st;
+    if (stat(sdPath.c_str(), &st) == 0 && st.st_size > 100) {
+        SDL_Texture* tex = IMG_LoadTexture(rnd, sdPath.c_str());
+        if (tex) return tex;
+    }
+    std::string romfsPath = "romfs:/" + filename;
+    return IMG_LoadTexture(rnd, romfsPath.c_str());
+}
+
+void updateQRCodes() {
+    mkdir("sdmc:/YamaNX_QR", 0777);
+    
+    CURL* curl = curl_easy_init();
+    if (!curl) return;
+
+    bool anyChanged = false;
+    for (const auto& item : qrList) {
+        if (!appRunning) break;
+        std::vector<uint8_t> buffer;
+        curl_easy_reset(curl);
+        curl_easy_setopt(curl, CURLOPT_URL, item.url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 4L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 6L);
+
+        CURLcode res = curl_easy_perform(curl);
+        if (res == CURLE_OK && buffer.size() > 100) {
+            std::string path = "sdmc:/YamaNX_QR/" + item.filename;
+            bool isDifferent = true;
+            FILE* fp = fopen(path.c_str(), "rb");
+            if (fp) {
+                fseek(fp, 0, SEEK_END);
+                size_t sz = ftell(fp);
+                fseek(fp, 0, SEEK_SET);
+                if (sz == buffer.size()) {
+                    std::vector<uint8_t> existing(sz);
+                    fread(existing.data(), 1, sz, fp);
+                    if (memcmp(existing.data(), buffer.data(), sz) == 0) {
+                        isDifferent = false;
+                    }
+                }
+                fclose(fp);
+            }
+            if (isDifferent) {
+                FILE* out = fopen(path.c_str(), "wb");
+                if (out) {
+                    fwrite(buffer.data(), 1, buffer.size(), out);
+                    fclose(out);
+                    anyChanged = true;
+                }
+            }
+        }
+    }
+    curl_easy_cleanup(curl);
+
+    if (anyChanged) {
+        qrUpdated.store(true);
+    }
 }
 
 void fetchPatches(const std::string& gist_url) {
@@ -531,6 +788,9 @@ void fetchPatches(const std::string& gist_url) {
                 std::transform(p.title_id.begin(), p.title_id.end(), p.title_id.begin(), ::toupper);
                 p.is_installed = false;
                 p.normalized_name = normalizeString(p.name);
+                p.size_bytes = parseSizeToBytes(p.size);
+                p.original_index = (int)all_patches.size();
+                p.is_favorited = isFavorite(p.title_id);
                 all_patches.push_back(p);
             }
         }
@@ -567,6 +827,13 @@ void patchFetcherFunc(void* arg) {
 }
 
 void imageDownloaderFunc(void* arg) {
+    while (isLoadingPatches && appRunning) {
+        svcSleepThread(100000000ull);
+    }
+    if (appRunning && !isOfflineMode) {
+        updateQRCodes();
+    }
+
     std::vector<std::string> sources = {"GITHUB", "US", "EN", "EU", "JA"};
     while (appRunning) {
         std::string targetTitleId = "";
@@ -1186,6 +1453,10 @@ std::string callKeyboard() {
 
 int main(int argc, char **argv) {
     socketInitializeDefault(); curl_global_init(CURL_GLOBAL_ALL); romfsInit();
+    loadFavorites();
+    loadSortMode();
+    Updater::instance().init(argc > 0 ? argv[0] : nullptr);
+    Updater::instance().checkUpdate(true);
     nsInitialize();
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     PadState pad; padInitializeDefault(&pad);
@@ -1198,9 +1469,26 @@ int main(int argc, char **argv) {
     window = SDL_CreateWindow("YamaNX", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_W, SCREEN_H, SDL_WINDOW_SHOWN);
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
-    fontBig = TTF_OpenFont("romfs:/font.ttf", 32);
-    fontMid = TTF_OpenFont("romfs:/font.ttf", 22);
-    fontSmall = TTF_OpenFont("romfs:/font.ttf", 16);
+    // Fontu belleğe al: TTF_OpenFont dosyayı açık tutar ve romfs'i kilitler.
+    {
+        FILE* ff = fopen("romfs:/font.ttf", "rb");
+        if (ff) {
+            fseek(ff, 0, SEEK_END);
+            long fsz = ftell(ff);
+            fseek(ff, 0, SEEK_SET);
+            if (fsz > 0) {
+                g_fontData.resize((size_t)fsz);
+                if (fread(g_fontData.data(), 1, (size_t)fsz, ff) != (size_t)fsz) g_fontData.clear();
+            }
+            fclose(ff);
+        }
+        if (!g_fontData.empty()) {
+            int fsz = (int)g_fontData.size();
+            fontBig   = TTF_OpenFontRW(SDL_RWFromConstMem(g_fontData.data(), fsz), 1, 32);
+            fontMid   = TTF_OpenFontRW(SDL_RWFromConstMem(g_fontData.data(), fsz), 1, 22);
+            fontSmall = TTF_OpenFontRW(SDL_RWFromConstMem(g_fontData.data(), fsz), 1, 16);
+        }
+    }
     
     // Fallback if romfs font fails
     if (!fontBig) {
@@ -1214,11 +1502,9 @@ int main(int argc, char **argv) {
 
     texLogo = IMG_LoadTexture(renderer, "romfs:/logo.png");
     texSplash = IMG_LoadTexture(renderer, "romfs:/splash.png");
-    texQR_SertAyTumLinkler = IMG_LoadTexture(renderer, "romfs:/qr_SertAyTumLinkler.png");
-    texQR_SwatalkDiscord = IMG_LoadTexture(renderer, "romfs:/qr_swatalk_discord.png");
-    texQR_SonerCakirDiscord = IMG_LoadTexture(renderer, "romfs:/qr_sonercakir_discord.png");
-    texQR_SinnerClownDiscord = IMG_LoadTexture(renderer, "romfs:/qr_sinnerclown_discord.png");
-    texQR_SinnerClownSite = IMG_LoadTexture(renderer, "romfs:/qr_sinnerclown_site.png");
+    texQR_SertAyTumLinkler = loadQRTexture(renderer, "qr_SertAyTumLinkler.png");
+    texQR_SwatalkDiscord = loadQRTexture(renderer, "qr_swatalk_discord.png");
+    texQR_SonerCakirDiscord = loadQRTexture(renderer, "qr_sonercakir_discord.png");
     
     threadCreate(&patchThread, patchFetcherFunc, NULL, patchThreadStack, sizeof(patchThreadStack), 0x2B, -2);
     threadStart(&patchThread);
@@ -1238,6 +1524,20 @@ int main(int argc, char **argv) {
         
         HidTouchScreenState touchState;
         u32 touchCount = hidGetTouchScreenStates(&touchState, 1);
+        int currentTouchCount = (touchCount > 0) ? touchState.count : 0;
+        int currentTouchX = (currentTouchCount > 0) ? touchState.touches[0].x : 0;
+        int currentTouchY = (currentTouchCount > 0) ? touchState.touches[0].y : 0;
+        bool touchJustPressed = (currentTouchCount > 0 && prevTouchCount == 0);
+        bool touchJustReleased = (currentTouchCount == 0 && prevTouchCount > 0);
+        if (touchJustPressed) {
+            touchStartX = currentTouchX;
+            touchStartY = currentTouchY;
+            touchMoved = false;
+        } else if (currentTouchCount > 0 && !touchMoved) {
+            if (abs(currentTouchX - (int)touchStartX) > 15 || abs(currentTouchY - (int)touchStartY) > 15) {
+                touchMoved = true;
+            }
+        }
 
         if (kDown & HidNpadButton_Plus) { appRunning = false; cancelDownload = true; }
 
@@ -1248,37 +1548,86 @@ int main(int argc, char **argv) {
             threadActive = false;
         }
 
+        if (qrUpdated.load()) {
+            qrUpdated.store(false);
+            if (texQR_SertAyTumLinkler) SDL_DestroyTexture(texQR_SertAyTumLinkler);
+            if (texQR_SwatalkDiscord) SDL_DestroyTexture(texQR_SwatalkDiscord);
+            if (texQR_SonerCakirDiscord) SDL_DestroyTexture(texQR_SonerCakirDiscord);
+            texQR_SertAyTumLinkler = loadQRTexture(renderer, "qr_SertAyTumLinkler.png");
+            texQR_SwatalkDiscord = loadQRTexture(renderer, "qr_swatalk_discord.png");
+            texQR_SonerCakirDiscord = loadQRTexture(renderer, "qr_sonercakir_discord.png");
+        }
+
+        if (Updater::instance().readyToSwap()) {
+            Updater::instance().finishInstall();
+        }
+
+        UpdateState curUpdaterState = Updater::instance().state();
+        if (manualUpdateCheckRequested) {
+            if (curUpdaterState == UpdateState::UpToDate) {
+                showToast("Uygulama güncel! (" + Updater::instance().currentVersion() + ")");
+                manualUpdateCheckRequested = false;
+            } else if (curUpdaterState == UpdateState::Error) {
+                showToast("Hata: " + Updater::instance().statusMessage());
+                manualUpdateCheckRequested = false;
+            } else if (curUpdaterState == UpdateState::Available) {
+                activeModal = MODAL_UPDATE_AVAILABLE;
+                manualUpdateCheckRequested = false;
+            }
+        } else {
+            if (curUpdaterState == UpdateState::Available && !updateModalShownOnce && activeModal == MODAL_NONE && !isLoadingPatches) {
+                activeModal = MODAL_UPDATE_AVAILABLE;
+                updateModalShownOnce = true;
+            }
+        }
+        prevUpdaterState = curUpdaterState;
+
         bool canSelect = !(isOfflineMode && currentState == STATE_TUM_YAMALAR) && !isLoadingPatches;
 
         if (activeModal == MODAL_NONE) {
             // Touch Input
-            if (touchCount > 0 && touchState.count > 0) {
-                if (prevTouchCount == 0) {
-                    touchStartY = touchState.touches[0].y;
-                    touchStartX = touchState.touches[0].x;
+            if (currentTouchCount > 0) {
+                if (touchJustPressed) {
                     targetScrollOffset = currentScrollOffset;
                     scrollStartY = currentScrollOffset;
-                    touchMoved = false;
-                } else {
-                    if (abs((int)touchState.touches[0].y - touchStartY) > 15 || abs((int)touchState.touches[0].x - touchStartX) > 15) touchMoved = true;
-                    if (touchStartX > 300) {
-                        targetScrollOffset = scrollStartY + ((int)touchStartY - (int)touchState.touches[0].y);
-                        if (targetScrollOffset < 0) targetScrollOffset = 0;
-                        if (currentState == STATE_HAKKINDA) {
-                            float maxScroll = 1000;
-                            if (targetScrollOffset > maxScroll) targetScrollOffset = maxScroll;
-                        } else {
-                            int maxRows = (filtered_patches.size() + 3) / 4;
-                            float maxScroll = (maxRows * 190) - (SCREEN_H - 45) + 150;
-                            if (maxScroll < 0) maxScroll = 0;
-                            if (targetScrollOffset > maxScroll) targetScrollOffset = maxScroll;
-                        }
+                } else if (touchStartX > 300) {
+                    targetScrollOffset = scrollStartY + ((int)touchStartY - currentTouchY);
+                    if (targetScrollOffset < 0) targetScrollOffset = 0;
+                    if (currentState == STATE_HAKKINDA || currentState == STATE_AYARLAR) {
+                        float maxScroll = (currentState == STATE_HAKKINDA) ? 710 : 300;
+                        if (targetScrollOffset > maxScroll) targetScrollOffset = maxScroll;
+                    } else {
+                        int maxRows = (filtered_patches.size() + 3) / 4;
+                        float maxScroll = (maxRows * 190) - (SCREEN_H - 45) + 150;
+                        if (maxScroll < 0) maxScroll = 0;
+                        if (targetScrollOffset > maxScroll) targetScrollOffset = maxScroll;
                     }
                 }
-            } else if (prevTouchCount > 0) {
+            } else if (touchJustReleased) {
                 // Touch released
                 if (!touchMoved) {
-                    if (touchStartX < 300) {
+                    if (Updater::instance().isUpdateAvailable() && touchStartX >= SCREEN_W - 270 && touchStartX <= SCREEN_W - 10 && touchStartY >= 8 && touchStartY <= 45) {
+                        activeModal = MODAL_UPDATE_AVAILABLE;
+                    } else if (currentState == STATE_AYARLAR) {
+                        int bx = 340;
+                        int by = 50 + (int)contentOffsetY - (int)currentScrollOffset;
+                        int card1H = 95;
+                        int card2Y = by + 55 + card1H + 30;
+                        int btnY = card2Y + (Updater::instance().isUpdateAvailable() ? 115 : 85);
+                        int btnCheckW = 320;
+                        int btnCheckH = 45;
+                        if (touchStartX >= bx + 20 && touchStartX <= bx + 20 + btnCheckW && touchStartY >= btnY && touchStartY <= btnY + btnCheckH) {
+                            if (Updater::instance().isUpdateAvailable()) {
+                                activeModal = MODAL_UPDATE_AVAILABLE;
+                            } else {
+                                manualUpdateCheckRequested = true;
+                                Updater::instance().checkUpdate(true);
+                                showToast("Güncellemeler denetleniyor...");
+                            }
+                        } else if (Updater::instance().isUpdateAvailable() && touchStartX >= bx && touchStartX <= bx + 860 && touchStartY >= card2Y && touchStartY <= card2Y + 115) {
+                            activeModal = MODAL_UPDATE_AVAILABLE;
+                        }
+                    } else if (touchStartX < 300) {
                         int lw=1, lh=1; if (texLogo) SDL_QueryTexture(texLogo, NULL, NULL, &lw, &lh);
                         float scale = 360.0f / (lw>0?lw:1);
                         int logoBottomY = texLogo ? 30 + (int)(lh*scale) : 120;
@@ -1288,9 +1637,11 @@ int main(int argc, char **argv) {
                         if (touchStartY > searchY1 && touchStartY < searchY2) {
                             searchQuery = callKeyboard(); selectedIndex = 0; targetScrollOffset = 0; filterPatches();
                         } else {
-                            for(int m=0; m<3; m++) {
-                                int my = logoBottomY + 90 + m*60;
-                                if (touchStartY > my && touchStartY < my+50) {
+                            int menuStartY = logoBottomY + 80;
+                            int menuSpacing = 54;
+                            for(int m=0; m<5; m++) {
+                                int my = menuStartY + m*menuSpacing;
+                                if (touchStartY >= my && touchStartY <= my+46) {
                                     if (selectedMenu != m) {
                                         contentOffsetY = (m > selectedMenu) ? 150.0f : -150.0f;
                                     }
@@ -1299,21 +1650,26 @@ int main(int argc, char **argv) {
                                 }
                             }
                         }
-                    } else if (currentState != STATE_HAKKINDA && canSelect) {
-                        int startX = 320, startY = 40 - currentScrollOffset, itemW = 210, itemH = 120;
-                        for(int i=0; i<(int)filtered_patches.size(); i++) {
-                            int col = i % 4, r = i / 4;
-                            int ix = startX + col * (itemW + 25), iy = startY + r * (itemH + 70);
-                            if (touchStartX >= ix && touchStartX <= ix+itemW && touchStartY >= iy && touchStartY <= iy+itemH) {
-                                selectedIndex = i;
-                                activePatchCopy = filtered_patches[i]; hasActivePatch = true;
-                                activePatchCopy.is_installed = checkInstalled(activePatchCopy.title_id);
-                                deviceGameVersion = getDeviceGameVersion(activePatchCopy.title_id);
-                                activeModal = MODAL_GAME_INFO; break;
+                    } else if (currentState != STATE_HAKKINDA && currentState != STATE_AYARLAR && canSelect) {
+                        if (touchStartY >= SCREEN_H - 45) {
+                            sortModalSelection = (int)currentSortMode;
+                            activeModal = MODAL_SORT;
+                        } else {
+                            int startX = 320, startY = 40 - currentScrollOffset, itemW = 210, itemH = 120;
+                            for(int i=0; i<(int)filtered_patches.size(); i++) {
+                                int col = i % 4, r = i / 4;
+                                int ix = startX + col * (itemW + 25), iy = startY + r * (itemH + 70);
+                                if (touchStartX >= ix && touchStartX <= ix+itemW && touchStartY >= iy && touchStartY <= iy+itemH) {
+                                    selectedIndex = i;
+                                    activePatchCopy = filtered_patches[i]; hasActivePatch = true;
+                                    activePatchCopy.is_installed = checkInstalled(activePatchCopy.title_id);
+                                    deviceGameVersion = getDeviceGameVersion(activePatchCopy.title_id);
+                                    activeModal = MODAL_GAME_INFO; break;
+                                }
                             }
                         }
                     }
-                } else if (currentState != STATE_HAKKINDA && filtered_patches.size() > 0) {
+                } else if (currentState != STATE_HAKKINDA && currentState != STATE_AYARLAR && filtered_patches.size() > 0) {
                     // Update selectedIndex to match the scrolled view
                     int row = (targetScrollOffset + 95) / 190;
                     if (row < 0) row = 0;
@@ -1326,11 +1682,34 @@ int main(int argc, char **argv) {
                     if (newIndex >= 0) selectedIndex = newIndex;
                 }
             }
-            prevTouchCount = touchCount > 0 ? touchState.count : 0;
 
-            // Controller Input
             if (kDown & HidNpadButton_Y) {
-                searchQuery = callKeyboard(); selectedIndex = 0; targetScrollOffset = 0; filterPatches();
+                if (Updater::instance().isUpdateAvailable()) {
+                    activeModal = MODAL_UPDATE_AVAILABLE;
+                } else {
+                    searchQuery = callKeyboard(); selectedIndex = 0; targetScrollOffset = 0; filterPatches();
+                }
+            }
+
+            if ((kDown & HidNpadButton_Minus) && currentState != STATE_HAKKINDA && currentState != STATE_AYARLAR) {
+                sortModalSelection = (int)currentSortMode;
+                activeModal = MODAL_SORT;
+            }
+
+            if ((kDown & HidNpadButton_X) && currentState != STATE_HAKKINDA && currentState != STATE_AYARLAR) {
+                if (filtered_patches.size() > 0 && canSelect && selectedIndex < (int)filtered_patches.size()) {
+                    toggleFavorite(filtered_patches[selectedIndex].title_id);
+                }
+            }
+
+            if (currentState == STATE_AYARLAR && (kDown & (HidNpadButton_X | HidNpadButton_A))) {
+                if (Updater::instance().isUpdateAvailable()) {
+                    activeModal = MODAL_UPDATE_AVAILABLE;
+                } else {
+                    manualUpdateCheckRequested = true;
+                    Updater::instance().checkUpdate(true);
+                    showToast("Güncellemeler denetleniyor...");
+                }
             }
 
             if (kDown & HidNpadButton_B) {
@@ -1338,19 +1717,19 @@ int main(int argc, char **argv) {
             }
             
             if (kDown & (HidNpadButton_L | HidNpadButton_ZL)) {
-                if (selectedMenu > 0) { selectedMenu--; } else { selectedMenu = 2; }
+                if (selectedMenu > 0) { selectedMenu--; } else { selectedMenu = 4; }
                 selectedIndex=0; targetScrollOffset=0; currentState=(AppState)selectedMenu;
                 contentOffsetY = -150.0f;
                 filterPatches();
             }
             if (kDown & (HidNpadButton_R | HidNpadButton_ZR)) {
-                if (selectedMenu < 2) { selectedMenu++; } else { selectedMenu = 0; }
+                if (selectedMenu < 4) { selectedMenu++; } else { selectedMenu = 0; }
                 selectedIndex=0; targetScrollOffset=0; currentState=(AppState)selectedMenu;
                 contentOffsetY = 150.0f;
                 filterPatches();
             }
 
-            if (currentState == STATE_HAKKINDA) {
+            if (currentState == STATE_HAKKINDA || currentState == STATE_AYARLAR) {
                 u64 dKeysDown = kDown & (HidNpadButton_Down | HidNpadButton_Up | HidNpadButton_StickRDown | HidNpadButton_StickRUp | HidNpadButton_StickLDown | HidNpadButton_StickLUp);
                 u64 dKeysHeld = kHeld & (HidNpadButton_Down | HidNpadButton_Up | HidNpadButton_StickRDown | HidNpadButton_StickRUp | HidNpadButton_StickLDown | HidNpadButton_StickLUp);
                 
@@ -1374,9 +1753,9 @@ int main(int argc, char **argv) {
                 }
                 
                 if (targetScrollOffset < 0) targetScrollOffset = 0;
-                float maxScroll = 1000;
+                float maxScroll = (currentState == STATE_HAKKINDA) ? 710 : 300;
                 if (targetScrollOffset > maxScroll) targetScrollOffset = maxScroll;
-            } else if (currentState != STATE_HAKKINDA && canSelect) {
+            } else if (currentState != STATE_HAKKINDA && currentState != STATE_AYARLAR && canSelect) {
                 bool dpadUsed = false;
                 if (filtered_patches.size() > 0) {
                     u64 dKeysDown = kDown & (HidNpadButton_Right | HidNpadButton_Left | HidNpadButton_Down | HidNpadButton_Up | HidNpadButton_StickLRight | HidNpadButton_StickLLeft | HidNpadButton_StickLDown | HidNpadButton_StickLUp | HidNpadButton_StickRRight | HidNpadButton_StickRLeft | HidNpadButton_StickRDown | HidNpadButton_StickRUp);
@@ -1425,6 +1804,9 @@ int main(int argc, char **argv) {
             }
         } else if (activeModal == MODAL_GAME_INFO) {
             if (kDown & HidNpadButton_B) { activeModal = MODAL_NONE; }
+            if ((kDown & HidNpadButton_X) && hasActivePatch) {
+                toggleFavorite(activePatchCopy.title_id);
+            }
             if (kDown & HidNpadButton_A && hasActivePatch) {
                 if (activePatchCopy.is_installed) {
                     removePatchByManifest(activePatchCopy.title_id);
@@ -1436,6 +1818,28 @@ int main(int argc, char **argv) {
                     isDownloading = true; cancelDownload = false; threadActive = true;
                     threadCreate(&downloadThread, downloadThreadFunc, &activePatchCopy, downloadThreadStack, sizeof(downloadThreadStack), 0x2B, -2);
                     threadStart(&downloadThread);
+                }
+            }
+            if (touchJustReleased && !touchMoved) {
+                int bx = 320, by = 160, bw = 640;
+                if (touchStartX >= bx+30 && touchStartX <= bx+240 && touchStartY >= by+170 && touchStartY <= by+212 && hasActivePatch) {
+                    toggleFavorite(activePatchCopy.title_id);
+                } else if (touchStartX >= bx+260 && touchStartX <= bx+610 && touchStartY >= by+270 && touchStartY <= by+320 && hasActivePatch) {
+                    if (activePatchCopy.is_installed) {
+                        removePatchByManifest(activePatchCopy.title_id);
+                        activePatchCopy.is_installed = false;
+                        for (auto& p : all_patches) { if (p.title_id == activePatchCopy.title_id) { p.is_installed = false; break; } }
+                        activeModal = MODAL_NONE; filterPatches();
+                    } else {
+                        activeModal = MODAL_DOWNLOADING;
+                        isDownloading = true; cancelDownload = false; threadActive = true;
+                        threadCreate(&downloadThread, downloadThreadFunc, &activePatchCopy, downloadThreadStack, sizeof(downloadThreadStack), 0x2B, -2);
+                        threadStart(&downloadThread);
+                    }
+                } else if (touchStartX >= bx+260 && touchStartX <= bx+610 && touchStartY >= by+330 && touchStartY <= by+365) {
+                    activeModal = MODAL_NONE;
+                } else if (touchStartX < bx || touchStartX > bx+bw || touchStartY < by || touchStartY > by+400) {
+                    activeModal = MODAL_NONE;
                 }
             }
         } else if (activeModal == MODAL_DOWNLOADING) {
@@ -1452,7 +1856,120 @@ int main(int argc, char **argv) {
                     filterPatches();
                 }
             }
+        } else if (activeModal == MODAL_UPDATE_AVAILABLE) {
+            if (kDown & HidNpadButton_B) {
+                activeModal = MODAL_NONE;
+            }
+            if (kDown & HidNpadButton_A) {
+                activeModal = MODAL_UPDATE_DOWNLOADING;
+                Updater::instance().startDownload();
+            }
+            if (touchJustReleased && !touchMoved) {
+                int bx = 320, by = 160, bw = 640;
+                int btnW = 200, btnH = 45, btnY = by + 315;
+                int btnA_X = bx + 80;
+                int btnB_X = bx + bw - btnW - 80;
+                if (touchStartX >= btnA_X && touchStartX <= btnA_X + btnW && touchStartY >= btnY && touchStartY <= btnY + btnH) {
+                    activeModal = MODAL_UPDATE_DOWNLOADING;
+                    Updater::instance().startDownload();
+                } else if (touchStartX >= btnB_X && touchStartX <= btnB_X + btnW && touchStartY >= btnY && touchStartY <= btnY + btnH) {
+                    activeModal = MODAL_NONE;
+                }
+            }
+        } else if (activeModal == MODAL_UPDATE_DOWNLOADING) {
+            UpdateState us = Updater::instance().state();
+            if (us == UpdateState::Available) {
+                activeModal = MODAL_NONE;
+            } else if (us == UpdateState::Downloading) {
+                if (kDown & HidNpadButton_B) {
+                    Updater::instance().cancel();
+                    activeModal = MODAL_NONE;
+                    showToast("İndirme iptal edildi.");
+                }
+            } else if (us == UpdateState::Installed) {
+                if (kDown & (HidNpadButton_A | HidNpadButton_Plus)) {
+                    pendingRelaunch = true;
+                    appRunning = false;
+                }
+            } else if (us == UpdateState::Error) {
+                if (kDown & (HidNpadButton_A | HidNpadButton_B)) {
+                    activeModal = MODAL_NONE;
+                }
+            }
+
+            if (touchJustReleased && !touchMoved) {
+                int bx = 320, by = 160, bw = 640;
+                int btnW = 240, btnH = 40, btnY = by + 300;
+                int btnX = bx + (bw - btnW) / 2;
+                if (touchStartX >= btnX && touchStartX <= btnX + btnW && touchStartY >= btnY && touchStartY <= btnY + btnH) {
+                    if (us == UpdateState::Downloading) {
+                        Updater::instance().cancel();
+                        activeModal = MODAL_NONE;
+                        showToast("İndirme iptal edildi.");
+                    } else if (us == UpdateState::Installed) {
+                        pendingRelaunch = true;
+                        appRunning = false;
+                    } else if (us == UpdateState::Error) {
+                        activeModal = MODAL_NONE;
+                    }
+                }
+            }
+        } else if (activeModal == MODAL_SORT) {
+            if (kDown & (HidNpadButton_B | HidNpadButton_Minus)) {
+                activeModal = MODAL_NONE;
+            }
+            if (kDown & (HidNpadButton_Up | HidNpadButton_StickLUp | HidNpadButton_StickRUp)) {
+                if (sortModalSelection > 0) sortModalSelection--;
+                else sortModalSelection = 5;
+            }
+            if (kDown & (HidNpadButton_Down | HidNpadButton_StickLDown | HidNpadButton_StickRDown)) {
+                if (sortModalSelection < 5) sortModalSelection++;
+                else sortModalSelection = 0;
+            }
+            if (kDown & HidNpadButton_A) {
+                currentSortMode = g_sortOptions[sortModalSelection].mode;
+                saveSortMode();
+                filterPatches();
+                activeModal = MODAL_NONE;
+            }
+            if (touchJustReleased && !touchMoved) {
+                int bx = 340, by = 160, bw = 600, bh = 380;
+                bool clickedOption = false;
+                for (int i = 0; i < 6; i++) {
+                    int optY = by + 68 + i * 48;
+                    int optH = 42;
+                    int optX = bx + 25;
+                    int optW = bw - 50;
+                    if (touchStartX >= optX && touchStartX <= optX + optW && touchStartY >= optY && touchStartY <= optY + optH) {
+                        sortModalSelection = i;
+                        currentSortMode = g_sortOptions[i].mode;
+                        saveSortMode();
+                        filterPatches();
+                        activeModal = MODAL_NONE;
+                        clickedOption = true;
+                        break;
+                    }
+                }
+                if (!clickedOption) {
+                    if (touchStartX < bx || touchStartX > bx + bw || touchStartY < by || touchStartY > by + bh) {
+                        activeModal = MODAL_NONE;
+                    }
+                }
+            }
         }
+
+        static int autoRestartCountdown = 0;
+        if (activeModal == MODAL_UPDATE_DOWNLOADING && Updater::instance().state() == UpdateState::Installed) {
+            autoRestartCountdown++;
+            if (autoRestartCountdown > 90) { // ~1.5 sn sonra otomatik yeniden başlat
+                pendingRelaunch = true;
+                appRunning = false;
+            }
+        } else {
+            autoRestartCountdown = 0;
+        }
+
+        prevTouchCount = currentTouchCount;
 
         // Lerp scrolling
         currentScrollOffset += (targetScrollOffset - currentScrollOffset) * 0.25f;
@@ -1545,16 +2062,27 @@ int main(int argc, char **argv) {
         else drawText(searchQuery.c_str(), 20, logoBottomY + 35, colorWhite, fontSmall);
 
         // Menüler - Smooth Transition
-        float targetMenuY = logoBottomY + 90 + selectedMenu*60;
+        int menuStartY = logoBottomY + 80;
+        int menuSpacing = 54;
+        float targetMenuY = menuStartY + selectedMenu * menuSpacing;
         if (currentMenuY < 0) currentMenuY = targetMenuY;
         currentMenuY += (targetMenuY - currentMenuY) * 0.15f;
         
-        roundedBoxRGBA(renderer, 10, (int)currentMenuY, 290, (int)currentMenuY + 50, 10, 50, 49, 80, 255);
-        roundedRectangleRGBA(renderer, 10, (int)currentMenuY, 290, (int)currentMenuY + 50, 10, 80, 150, 255, 255);
+        roundedBoxRGBA(renderer, 10, (int)currentMenuY, 290, (int)currentMenuY + 46, 10, 50, 49, 80, 255);
+        roundedRectangleRGBA(renderer, 10, (int)currentMenuY, 290, (int)currentMenuY + 46, 10, 80, 150, 255, 255);
 
-        drawText("Tüm Yamalar", 30, logoBottomY + 105, selectedMenu==0 ? colorWhite : colorGray, fontMid);
-        drawText("Yüklü İçerikler", 30, logoBottomY + 165, selectedMenu==1 ? colorWhite : colorGray, fontMid);
-        drawText("Hakkında", 30, logoBottomY + 225, selectedMenu==2 ? colorWhite : colorGray, fontMid);
+        drawText("Tüm Yamalar", 30, menuStartY + 0 * menuSpacing + 11, selectedMenu==0 ? colorWhite : colorGray, fontMid);
+        drawText("Yüklü İçerikler", 30, menuStartY + 1 * menuSpacing + 11, selectedMenu==1 ? colorWhite : colorGray, fontMid);
+        drawText("Favoriler", 30, menuStartY + 2 * menuSpacing + 11, selectedMenu==2 ? colorWhite : colorGray, fontMid);
+        if (!g_favorites.empty()) {
+            drawText("★", 160, menuStartY + 2 * menuSpacing + 11, {241, 196, 15, 255}, fontSmall);
+        }
+        drawText("Hakkında", 30, menuStartY + 3 * menuSpacing + 11, selectedMenu==3 ? colorWhite : colorGray, fontMid);
+        drawText("Ayarlar", 30, menuStartY + 4 * menuSpacing + 11, selectedMenu==4 ? colorWhite : colorGray, fontMid);
+
+        if (Updater::instance().isUpdateAvailable()) {
+            filledCircleRGBA(renderer, 150, menuStartY + 4 * menuSpacing + 23, 5, 46, 204, 113, 255);
+        }
 
         // Applet / Offline Warning
         if (isOfflineMode || isAppletMode) {
@@ -1624,27 +2152,8 @@ int main(int argc, char **argv) {
                 SDL_RenderCopy(renderer, texQR_SonerCakirDiscord, NULL, &rect);
             }
             currentY += 220;
-
-            lineRGBA(renderer, bx - 10, currentY, bx + 870, currentY, 100, 100, 100, 255);
-            currentY += 50;
-
-            // --- 4. SinnerClown Discord & Site ---
-            drawTextCentered("SinnerClown Discord", bx + 217, currentY, colorWhite, fontMid);
-            drawTextCentered("SinnerClown Site", bx + 652, currentY, colorWhite, fontMid);
-            currentY += 40;
-            
-            if (texQR_SinnerClownDiscord) {
-                SDL_Rect rect1 = {bx + 217 - 90, currentY, 180, 180};
-                SDL_RenderCopy(renderer, texQR_SinnerClownDiscord, NULL, &rect1);
-            }
-            if (texQR_SinnerClownSite) {
-                SDL_Rect rect2 = {bx + 652 - 90, currentY, 180, 180};
-                SDL_RenderCopy(renderer, texQR_SinnerClownSite, NULL, &rect2);
-            }
-            currentY += 220;
-            
             // --- Scrollbar ---
-            float maxScroll = 1000.0f;
+            float maxScroll = 710.0f;
             int viewPortHeight = SCREEN_H - 45;
             int totalListHeight = maxScroll + viewPortHeight;
             if (totalListHeight > viewPortHeight) {
@@ -1664,7 +2173,53 @@ int main(int argc, char **argv) {
                 // Thumb
                 boxRGBA(renderer, SCREEN_W - 8, scrollThumbY, SCREEN_W, scrollThumbY + scrollThumbH, 150, 150, 160, 220);
             }
-            
+        } else if (currentState == STATE_AYARLAR) {
+            int bx = 340;
+            int by = 50 + (int)contentOffsetY - (int)currentScrollOffset;
+
+            // Başlık
+            drawText("Ayarlar", bx, by, colorWhite, fontBig);
+            by += 60;
+
+            // --- KART 1: Uygulama Bilgisi ---
+            int cardW = 860;
+            int card1H = 95;
+            roundedBoxRGBA(renderer, bx, by, bx + cardW, by + card1H, 10, 33, 32, 46, 255);
+            roundedRectangleRGBA(renderer, bx, by, bx + cardW, by + card1H, 10, 50, 49, 70, 255);
+
+            drawText("YamaNX - Nintendo Switch Türkçe Yama Yükleyicisi", bx + 20, by + 18, colorWhite, fontMid);
+            std::string verStr = "Sürüm: v" + Updater::instance().currentVersion() + "   |   Geliştirici: SertAy";
+            drawText(verStr.c_str(), bx + 20, by + 52, colorGray, fontSmall);
+            by += card1H + 25;
+
+            // --- KART 2: Güncelleme Alanı ---
+            int card2H = Updater::instance().isUpdateAvailable() ? 190 : 155;
+            roundedBoxRGBA(renderer, bx, by, bx + cardW, by + card2H, 10, 33, 32, 46, 255);
+            roundedRectangleRGBA(renderer, bx, by, bx + cardW, by + card2H, 10, 50, 49, 70, 255);
+
+            drawText("Uygulama Güncellemesi", bx + 20, by + 18, colorWhite, fontMid);
+
+            int btnY = by + 55;
+            if (Updater::instance().isUpdateAvailable()) {
+                ReleaseInfo rInfo = Updater::instance().releaseInfo();
+                std::string updMsg = "Yeni Sürüm Mevcut: " + rInfo.tagName;
+                drawText(updMsg.c_str(), bx + 20, by + 52, {46, 204, 113, 255}, fontMid);
+                drawText("Güncellemek için butona veya (Y) tuşuna basın.", bx + 20, by + 82, colorGray, fontSmall);
+                btnY = by + 115;
+            } else {
+                drawText("Uygulamanızın en güncel sürümünü kontrol etmek için aşağıdaki butona basın.", bx + 20, by + 52, colorGray, fontSmall);
+                btnY = by + 88;
+            }
+
+            int btnCheckW = 320;
+            int btnCheckH = 45;
+            if (Updater::instance().isUpdateAvailable()) {
+                roundedBoxRGBA(renderer, bx + 20, btnY, bx + 20 + btnCheckW, btnY + btnCheckH, 8, 46, 204, 113, 255);
+                drawTextCentered("ŞİMDİ GÜNCELLE (Y)", bx + 20 + btnCheckW / 2, btnY + 12, colorWhite, fontMid);
+            } else {
+                roundedBoxRGBA(renderer, bx + 20, btnY, bx + 20 + btnCheckW, btnY + btnCheckH, 8, 41, 128, 185, 255);
+                drawTextCentered("Güncellemeleri Denetle (X)", bx + 20 + btnCheckW / 2, btnY + 12, colorWhite, fontMid);
+            }
         } else if (currentState == STATE_TUM_YAMALAR && isOfflineMode) {
             const char* offlineMsg1 = "İnternet bağlantınızı kontrol edin";
             const char* offlineMsg2 = "ve uygulamayı tekrar başlatın.";
@@ -1674,6 +2229,15 @@ int main(int argc, char **argv) {
             
             drawText(offlineMsg1, 300 + (980 - w1)/2, 300 + (int)contentOffsetY, colorWhite, fontBig);
             drawText(offlineMsg2, 300 + (980 - w2)/2, 350 + (int)contentOffsetY, colorWhite, fontBig);
+        } else if (currentState == STATE_FAVORILER && filtered_patches.empty() && !isLoadingPatches) {
+            const char* favMsg1 = "Henüz favorilere eklenmiş bir yama yok.";
+            const char* favMsg2 = "Bir yamayı seçip (X) tuşuna basarak favorilere ekleyebilirsiniz.";
+            
+            int w1=0, h1=0; TTF_SizeUTF8(fontMid, favMsg1, &w1, &h1);
+            int w2=0, h2=0; TTF_SizeUTF8(fontSmall, favMsg2, &w2, &h2);
+            
+            drawText(favMsg1, 300 + (980 - w1)/2, 300 + (int)contentOffsetY, colorWhite, fontMid);
+            drawText(favMsg2, 300 + (980 - w2)/2, 345 + (int)contentOffsetY, colorGray, fontSmall);
         } else if (isLoadingPatches) {
             // Render nothing, just stay empty until patches load
         } else {
@@ -1735,6 +2299,15 @@ int main(int argc, char **argv) {
                         if(dName.length() > 22) dName = dName.substr(0, 19) + "...";
                         int textX = x + (itemW / 2) - (dName.length() * 4);
                         drawText(dName.c_str(), textX, y + itemH + 10, colorWhite, fontSmall);
+
+                        if (filtered_patches[i].is_favorited) {
+                            int fbw = 26, fbh = 22;
+                            int fbx = x - 4;
+                            int fby = y - 6;
+                            roundedBoxRGBA(renderer, fbx, fby, fbx + fbw, fby + fbh, 6, 241, 196, 15, 255);
+                            drawTextCentered("★", fbx + fbw/2, fby + 3, {20, 20, 20, 255}, fontSmall);
+                        }
+
                         if (filtered_patches[i].is_installed) {
                             int bw = 64, bh = 24;
                             int bx = x + itemW - bw + 8;
@@ -1778,10 +2351,26 @@ int main(int argc, char **argv) {
             }
         }
 
+        // --- Persistent Update Badge ---
+        if (Updater::instance().isUpdateAvailable() && activeModal == MODAL_NONE) {
+            std::string tag = Updater::instance().releaseInfo().tagName;
+            std::string badgeText = "Güncelleme: " + tag + " (Y)";
+            int tw = 0, th = 0;
+            TTF_SizeUTF8(fontSmall, badgeText.c_str(), &tw, &th);
+            int padX = 14, padY = 6;
+            int bw = tw + padX * 2, bh = th + padY * 2;
+            int bx = SCREEN_W - bw - 20, by = 10;
+            roundedBoxRGBA(renderer, bx, by, bx + bw, by + bh, 12, 230, 126, 34, 240);
+            drawText(badgeText.c_str(), bx + padX, by + padY, colorWhite, fontSmall);
+        }
+
         // Modal Overlay
         if (activeModal != MODAL_NONE) {
             boxRGBA(renderer, 0, 0, SCREEN_W, SCREEN_H, 0, 0, 0, 180);
             int bx = 320, by = 160, bw = 640, bh = 400;
+            if (activeModal == MODAL_SORT) {
+                bx = 340; by = 160; bw = 600; bh = 380;
+            }
             roundedBoxRGBA(renderer, bx, by, bx+bw, by+bh, 20, 33, 32, 46, 255);
             
             if (activeModal == MODAL_GAME_INFO) {
@@ -1865,6 +2454,16 @@ int main(int argc, char **argv) {
                 // Buttons fixed at bottom
                 int btnCenterX = bx + 435;
                 
+                // Favorite Button below cover
+                if (activePatchCopy.is_favorited) {
+                    roundedBoxRGBA(renderer, bx+30, by+170, bx+240, by+212, 8, 241, 196, 15, 255);
+                    drawTextCentered("★ Favorilerde (X)", bx+135, by+182, {20, 20, 20, 255}, fontSmall);
+                } else {
+                    roundedBoxRGBA(renderer, bx+30, by+170, bx+240, by+212, 8, 42, 41, 64, 255);
+                    roundedRectangleRGBA(renderer, bx+30, by+170, bx+240, by+212, 8, 120, 120, 140, 255);
+                    drawTextCentered("☆ Favoriye Ekle (X)", bx+135, by+182, colorWhite, fontSmall);
+                }
+                
                 if (activePatchCopy.is_installed) {
                     roundedBoxRGBA(renderer, bx+260, by+270, bx+610, by+320, 10, 200, 50, 50, 255);
                     drawTextCentered("KALDIR (A)", btnCenterX, by+285, colorWhite, fontMid);
@@ -1941,31 +2540,177 @@ int main(int argc, char **argv) {
                     roundedBoxRGBA(renderer, btnX, btnY, btnX+btnW, btnY+40, 10, 200, 50, 50, 255);
                     drawTextCentered("KAPAT (A)", centerX, btnY+10, colorWhite, fontSmall);
                 }
+            } else if (activeModal == MODAL_UPDATE_AVAILABLE) {
+                ReleaseInfo rInfo = Updater::instance().releaseInfo();
+                int centerX = bx + bw / 2;
+                
+                // Header
+                drawTextCentered("YENİ GÜNCELLEME MEVCUT!", centerX, by + 25, colorWhite, fontMid);
+                std::string verText = "Mevcut: v" + Updater::instance().currentVersion() + "  ->  Yeni: " + rInfo.tagName;
+                drawTextCentered(verText.c_str(), centerX, by + 55, colorGray, fontSmall);
+                
+                // Separator
+                lineRGBA(renderer, bx + 30, by + 80, bx + bw - 30, by + 80, 80, 80, 100, 255);
+                
+                // Release Notes Box
+                int noteX = bx + 30;
+                int noteY = by + 95;
+                int noteW = bw - 60;
+                int noteH = 190;
+                roundedBoxRGBA(renderer, noteX, noteY, noteX + noteW, noteY + noteH, 10, 22, 21, 32, 255);
+                
+                std::string notes = rInfo.body.empty() ? "Değişiklik notu belirtilmemiş." : rInfo.body;
+                std::string wrappedNotes = wrapText(notes, 50);
+                SDL_Rect noteClip = {noteX + 10, noteY + 10, noteW - 20, noteH - 20};
+                SDL_RenderSetClipRect(renderer, &noteClip);
+                drawText(wrappedNotes.c_str(), noteX + 15, noteY + 12, colorWhite, fontSmall);
+                SDL_RenderSetClipRect(renderer, NULL);
+                
+                // Buttons
+                int btnW = 200;
+                int btnH = 45;
+                int btnA_X = bx + 80;
+                int btnB_X = bx + bw - btnW - 80;
+                int btnY = by + 315;
+                
+                // [A] GÜNCELLE
+                roundedBoxRGBA(renderer, btnA_X, btnY, btnA_X + btnW, btnY + btnH, 10, 46, 204, 113, 255);
+                drawTextCentered("GÜNCELLE (A)", btnA_X + btnW / 2, btnY + 12, colorWhite, fontMid);
+                
+                // [B] GEÇ
+                roundedBoxRGBA(renderer, btnB_X, btnY, btnB_X + btnW, btnY + btnH, 10, 120, 120, 130, 255);
+                drawTextCentered("GEÇ (B)", btnB_X + btnW / 2, btnY + 12, colorWhite, fontMid);
+                
+            } else if (activeModal == MODAL_UPDATE_DOWNLOADING) {
+                UpdateState us = Updater::instance().state();
+                int centerX = bx + bw / 2;
+                
+                drawTextCentered("UYGULAMA GÜNCELLENİYOR", centerX, by + 35, colorWhite, fontMid);
+                
+                std::string msg = Updater::instance().statusMessage();
+                drawTextCentered(msg.c_str(), centerX, by + 130, colorWhite, fontMid);
+                
+                int barY = by + 180;
+                int barW = 540;
+                int barH = 34;
+                int barX = bx + (bw - barW) / 2;
+                
+                // Outer Track
+                roundedBoxRGBA(renderer, barX, barY, barX + barW, barY + barH, 13, 42, 41, 64, 255);
+                
+                int prog = Updater::instance().progress();
+                if (prog > 0) {
+                    int pad = 4;
+                    int innerX = barX + pad;
+                    int innerY = barY + pad;
+                    int innerW = barW - pad * 2;
+                    int innerH = barH - pad * 2;
+                    
+                    float fillW = (prog * innerW) / 100.0f;
+                    if (fillW < 1.0f) fillW = 1.0f;
+                    
+                    SDL_Rect clipRect = { innerX, innerY, (int)fillW, innerH };
+                    SDL_RenderSetClipRect(renderer, &clipRect);
+                    roundedBoxRGBA(renderer, innerX, innerY, innerX + innerW, innerY + innerH, 9, 52, 152, 219, 255);
+                    SDL_RenderSetClipRect(renderer, NULL);
+                }
+                
+                char progStr[32];
+                sprintf(progStr, "%% %d", prog);
+                drawTextCentered(progStr, centerX, barY + 7, colorWhite, fontSmall);
+                
+                int btnY = by + 300;
+                int btnW = 240;
+                int btnX = bx + (bw - btnW) / 2;
+                
+                if (us == UpdateState::Downloading) {
+                    roundedBoxRGBA(renderer, btnX, btnY, btnX + btnW, btnY + 40, 10, 200, 50, 50, 255);
+                    drawTextCentered("İPTAL ET (B)", centerX, btnY + 10, colorWhite, fontSmall);
+                } else if (us == UpdateState::Installed) {
+                    roundedBoxRGBA(renderer, btnX, btnY, btnX + btnW, btnY + 40, 10, 46, 204, 113, 255);
+                    drawTextCentered("YENİDEN BAŞLAT (A)", centerX, btnY + 10, colorWhite, fontMid);
+                } else if (us == UpdateState::Error) {
+                    roundedBoxRGBA(renderer, btnX, btnY, btnX + btnW, btnY + 40, 10, 150, 50, 50, 255);
+                    drawTextCentered("KAPAT (B)", centerX, btnY + 10, colorWhite, fontSmall);
+                }
+            } else if (activeModal == MODAL_SORT) {
+                int centerX = bx + bw / 2;
+                drawTextCentered("Sıralama Seçenekleri", centerX, by + 20, colorWhite, fontMid);
+                lineRGBA(renderer, bx + 25, by + 56, bx + bw - 25, by + 56, 80, 80, 100, 255);
+                
+                for (int i = 0; i < 6; i++) {
+                    int optY = by + 68 + i * 48;
+                    int optH = 42;
+                    int optX = bx + 25;
+                    int optW = bw - 50;
+                    
+                    bool isCursor = (i == sortModalSelection);
+                    bool isCurrent = (g_sortOptions[i].mode == currentSortMode);
+                    
+                    if (isCursor) {
+                        roundedBoxRGBA(renderer, optX, optY, optX + optW, optY + optH, 8, 50, 49, 80, 255);
+                        roundedRectangleRGBA(renderer, optX, optY, optX + optW, optY + optH, 8, 80, 150, 255, 255);
+                    } else {
+                        roundedBoxRGBA(renderer, optX, optY, optX + optW, optY + optH, 8, 26, 25, 36, 255);
+                    }
+                    
+                    SDL_Color textColor = isCursor ? colorWhite : colorGray;
+                    drawText(g_sortOptions[i].label, optX + 20, optY + 10, textColor, fontSmall);
+                    
+                    int cx = optX + optW - 28;
+                    int cy = optY + optH / 2;
+                    if (isCurrent) {
+                        filledCircleRGBA(renderer, cx, cy, 9, 46, 204, 113, 255);
+                        // Clean 2px checkmark inside green circle
+                        lineRGBA(renderer, cx - 4, cy, cx - 1, cy + 3, 255, 255, 255, 255);
+                        lineRGBA(renderer, cx - 4, cy + 1, cx - 1, cy + 4, 255, 255, 255, 255);
+                        lineRGBA(renderer, cx - 1, cy + 3, cx + 4, cy - 3, 255, 255, 255, 255);
+                        lineRGBA(renderer, cx - 1, cy + 4, cx + 4, cy - 2, 255, 255, 255, 255);
+                    }
+                }
             }
         }
         
         // --- MODERN STATUS BAR ---
         boxRGBA(renderer, 0, SCREEN_H - 45, SCREEN_W, SCREEN_H, 17, 16, 26, 255); // #11101A
         
-        if (currentState != STATE_HAKKINDA) {
+        if (currentState != STATE_HAKKINDA && currentState != STATE_AYARLAR) {
             SDL_Color colorLeftText = {200, 198, 216, 255}; // #C8C6D8
-            char countText[128]; sprintf(countText, "%d yama listelendi", (int)filtered_patches.size());
+            char countText[128];
+            sprintf(countText, "%d yama  •  Sıralama: %s", (int)filtered_patches.size(), g_sortOptions[(int)currentSortMode].shortLabel);
             drawText(countText, 30, SCREEN_H - 32, colorLeftText, fontSmall);
         }
         
         // Right-aligned Dynamic Control Tags
         struct ControlTag { const char* key; const char* action; };
-        ControlTag tags[] = {
-            { "L/R", "Menü Geçişi" },
-            { "D-Pad", "Gezin" },
-            { "A", "Seç" },
-            { "Y", "Ara" },
-            { "B", "İptal" },
-            { "+", "Çıkış" }
-        };
+        std::vector<ControlTag> tags;
+        if (currentState == STATE_HAKKINDA) {
+            tags = {
+                { "L/R", "Menü" },
+                { "D-Pad", "Kaydır" },
+                { "+", "Çıkış" }
+            };
+        } else if (currentState == STATE_AYARLAR) {
+            tags = {
+                { "L/R", "Menü" },
+                { "A/X", "Güncelle" },
+                { "+", "Çıkış" }
+            };
+        } else {
+            tags = {
+                { "L/R", "Menü" },
+                { "D-Pad", "Gezin" },
+                { "A", "Seç" },
+                { "X", "Favori" },
+                { "-", "Sırala" },
+                { "Y", "Ara" },
+                { "B", "İptal" },
+                { "+", "Çıkış" }
+            };
+        }
         
         int currentX = SCREEN_W - 30;
-        for (int i = 5; i >= 0; i--) {
+        for (int i = (int)tags.size() - 1; i >= 0; i--) {
             int aw = 0, ah = 0, kw = 0, kh = 0;
             if (fontSmall) {
                 TTF_SizeUTF8(fontSmall, tags[i].action, &aw, &ah);
@@ -1981,13 +2726,27 @@ int main(int argc, char **argv) {
             roundedBoxRGBA(renderer, currentX, SCREEN_H - 34, currentX + kw + 16, SCREEN_H - 10, 5, 42, 41, 64, 255); // #2A2940
             drawText(tags[i].key, currentX + 8, SCREEN_H - 32, {208, 206, 234, 255}, fontSmall); // #D0CEEA
             
-            currentX -= 25; // Spacing before the next tag
+            currentX -= 20; // Spacing before the next tag
+        }
+
+        // --- Toast Notification ---
+        if (toastTimer > 0) {
+            toastTimer--;
+            int tw = 0, th = 0;
+            TTF_SizeUTF8(fontSmall, toastMessage.c_str(), &tw, &th);
+            int padX = 20, padY = 10;
+            int bw = tw + padX * 2, bh = th + padY * 2;
+            int bx = (SCREEN_W - bw) / 2;
+            int by = 30;
+            roundedBoxRGBA(renderer, bx, by, bx + bw, by + bh, 8, 30, 30, 48, 235);
+            drawText(toastMessage.c_str(), bx + padX, by + padY, colorWhite, fontSmall);
         }
 
         SDL_RenderPresent(renderer);
     }
 
     appRunning = false;
+    Updater::instance().shutdown();
     cancelDownload = true;
     // Give threads a moment to notice appRunning=false before waiting
     svcSleepThread(100000000ull);
@@ -2009,10 +2768,16 @@ int main(int argc, char **argv) {
     if (texQR_SertAyTumLinkler) SDL_DestroyTexture(texQR_SertAyTumLinkler);
     if (texQR_SwatalkDiscord) SDL_DestroyTexture(texQR_SwatalkDiscord);
     if (texQR_SonerCakirDiscord) SDL_DestroyTexture(texQR_SonerCakirDiscord);
-    if (texQR_SinnerClownDiscord) SDL_DestroyTexture(texQR_SinnerClownDiscord);
-    if (texQR_SinnerClownSite) SDL_DestroyTexture(texQR_SinnerClownSite);
     
-    plExit(); romfsExit(); SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window);
+    plExit();
+    if (!Updater::instance().romfsReleased()) {
+        romfsExit();
+    }
+    SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window);
     IMG_Quit(); TTF_Quit(); SDL_Quit(); socketExit(); curl_global_cleanup(); nsExit();
+
+    if (pendingRelaunch) {
+        Updater::instance().relaunch();
+    }
     return 0;
 }
