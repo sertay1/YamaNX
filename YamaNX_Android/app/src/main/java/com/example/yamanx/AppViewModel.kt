@@ -6,9 +6,11 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.Settings
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -22,12 +24,25 @@ import kotlinx.coroutines.withContext
 import net.lingala.zip4j.ZipFile
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONObject
 import java.io.File
+import java.text.Collator
 import java.text.Normalizer
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+enum class SortMode(val label: String, val shortLabel: String) {
+    NAME_ASC("İsim (A - Z)", "A - Z"),
+    NAME_DESC("İsim (Z - A)", "Z - A"),
+    NEWEST("Yeniden Eskiye", "Yeniden Eskiye"),
+    OLDEST("Eskiden Yeniye", "Eskiden Yeniye"),
+    SIZE_DESC("Boyut (Büyükten Küçüğe)", "Boyut (Büyük)"),
+    SIZE_ASC("Boyut (Küçükten Büyüğe)", "Boyut (Küçük)")
+}
+
 class AppViewModel(application: Application) : AndroidViewModel(application) {
+
+    val currentAppVersion = "2.1.0"
 
     val allPatches = mutableStateListOf<Patch>()
     val isLoading = mutableStateOf(true)
@@ -44,6 +59,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val downloadStatus = mutableStateOf("")
     val downloadFinished = mutableStateOf(false)
     val downloadPatchName = mutableStateOf("")
+
+    // Favorites & Sort Mode
+    val favorites = mutableStateListOf<String>()
+    val currentSortMode = mutableStateOf(SortMode.NAME_ASC)
+
+    // GitHub Updater States
+    val isUpdateAvailable = mutableStateOf(false)
+    val showUpdatePromptDialog = mutableStateOf(false)
+    val updateTagName = mutableStateOf("")
+    val updateReleaseNotes = mutableStateOf("")
+    val updateDownloadUrl = mutableStateOf("")
+    val isCheckingUpdate = mutableStateOf(false)
+    val isDownloadingUpdate = mutableStateOf(false)
+    val updateDownloadProgress = mutableStateOf(0f)
+    val updateStatusText = mutableStateOf("")
+    val updateToastMessage = mutableStateOf<String?>(null)
+
+    val scrollToTopEvents = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    fun requestScrollToTop(route: String) {
+        scrollToTopEvents.tryEmit(route)
+    }
 
     private val prefs = application.getSharedPreferences("yamanx_prefs", Context.MODE_PRIVATE)
     private val client = OkHttpClient.Builder()
@@ -77,11 +114,99 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
 
     init {
+        loadFavorites()
+        loadSortMode()
         prefs.getString("game_folder_uri", null)?.let {
             gameFolderUri.value = Uri.parse(it)
         }
         checkLoadFolderAccess()
         fetchPatches()
+        checkForUpdates(isManual = false)
+    }
+
+    private val turkishCollator: Collator = Collator.getInstance(Locale.forLanguageTag("tr-TR"))
+
+    private fun loadFavorites() {
+        val hasPurgedDefaultAgatha = prefs.getBoolean("agatha_fav_cleared_v1", false)
+        val rawSaved = prefs.getStringSet("favorites", emptySet()) ?: emptySet()
+        val saved = if (!hasPurgedDefaultAgatha) {
+            val agathaIds = setOf(
+                "0100C22021B48000", "010000F012936000",
+                "01002FD01A24C000", "0100218017CD8000", "010087C011C4E000"
+            )
+            val cleaned = rawSaved.filterNot { agathaIds.contains(it.uppercase(Locale.ROOT)) }.toSet()
+            prefs.edit().putStringSet("favorites", cleaned).putBoolean("agatha_fav_cleared_v1", true).apply()
+            cleaned
+        } else {
+            rawSaved
+        }
+        favorites.clear()
+        favorites.addAll(saved)
+    }
+
+    fun isFavorite(titleId: String): Boolean {
+        return favorites.contains(titleId.uppercase(Locale.ROOT))
+    }
+
+    fun toggleFavorite(patch: Patch) {
+        val tid = patch.titleId.uppercase(Locale.ROOT)
+        if (favorites.contains(tid)) {
+            favorites.remove(tid)
+            patch.isFavorited = false
+        } else {
+            favorites.add(tid)
+            patch.isFavorited = true
+        }
+        prefs.edit().putStringSet("favorites", favorites.toSet()).apply()
+    }
+
+    private fun loadSortMode() {
+        val ord = prefs.getInt("sort_mode", 0)
+        currentSortMode.value = SortMode.entries.getOrElse(ord) { SortMode.NAME_ASC }
+    }
+
+    fun setSortMode(mode: SortMode) {
+        currentSortMode.value = mode
+        prefs.edit().putInt("sort_mode", mode.ordinal).apply()
+        requestScrollToTop("discover")
+        requestScrollToTop("favorites")
+    }
+
+    fun sortPatches(list: List<Patch>, mode: SortMode = currentSortMode.value): List<Patch> {
+        return when (mode) {
+            SortMode.NAME_ASC -> list.sortedWith { a, b -> turkishCollator.compare(a.name, b.name) }
+            SortMode.NAME_DESC -> list.sortedWith { a, b -> turkishCollator.compare(b.name, a.name) }
+            SortMode.NEWEST -> list.sortedByDescending { it.originalIndex }
+            SortMode.OLDEST -> list.sortedBy { it.originalIndex }
+            SortMode.SIZE_DESC -> list.sortedWith(
+                compareByDescending<Patch> { if (it.sizeBytes <= 0L) -1L else it.sizeBytes }
+                    .thenBy(turkishCollator) { it.name }
+            )
+            SortMode.SIZE_ASC -> list.sortedWith(
+                compareBy<Patch> { if (it.sizeBytes <= 0L) Long.MAX_VALUE else it.sizeBytes }
+                    .thenBy(turkishCollator) { it.name }
+            )
+        }
+    }
+
+    private fun isSizeString(s: String): Boolean {
+        val up = s.uppercase(Locale.US)
+        return up.contains("MB") || up.contains("GB") || up.contains("KB") || up.contains(" B")
+    }
+
+    fun parseSizeToBytes(sizeStr: String): Long {
+        if (sizeStr.isBlank() || sizeStr.equals("Bilinmiyor", ignoreCase = true)) return 0L
+        val s = sizeStr.uppercase(Locale.US).trim().replace(",", ".")
+        if (!isSizeString(s)) return 0L
+        val match = Regex("([0-9]+(?:\\.[0-9]+)?)\\s*([A-Z]+)?").find(s) ?: return 0L
+        val num = match.groupValues[1].toDoubleOrNull() ?: return 0L
+        val unit = match.groupValues.getOrNull(2) ?: ""
+        return when {
+            unit.contains("GB") -> (num * 1024.0 * 1024.0 * 1024.0).toLong()
+            unit.contains("MB") -> (num * 1024.0 * 1024.0).toLong()
+            unit.contains("KB") -> (num * 1024.0).toLong()
+            else -> num.toLong()
+        }
     }
 
     /**
@@ -100,7 +225,188 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun fetchPatches() {
+    fun clearUpdateToast() {
+        updateToastMessage.value = null
+    }
+
+    private fun isNewerVersion(remoteTag: String, currentVer: String): Boolean {
+        fun parseParts(v: String): List<Int> {
+            val clean = v.lowercase(Locale.getDefault())
+                .replace("v", "")
+                .trim()
+            return clean.split(".").mapNotNull { part ->
+                part.filter { it.isDigit() }.toIntOrNull()
+            }
+        }
+        val rParts = parseParts(remoteTag)
+        val cParts = parseParts(currentVer)
+        val maxLen = maxOf(rParts.size, cParts.size)
+        for (i in 0 until maxLen) {
+            val r = rParts.getOrElse(i) { 0 }
+            val c = cParts.getOrElse(i) { 0 }
+            if (r > c) return true
+            if (r < c) return false
+        }
+        return false
+    }
+
+    fun checkForUpdates(isManual: Boolean = false) {
+        if (isCheckingUpdate.value) return
+        isCheckingUpdate.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val req = Request.Builder()
+                    .url("https://api.github.com/repos/sertay1/YamaNX/releases/latest")
+                    .header("User-Agent", "YamaNX-Android")
+                    .build()
+                val resp = client.newCall(req).execute()
+                if (!resp.isSuccessful) {
+                    withContext(Dispatchers.Main) {
+                        isCheckingUpdate.value = false
+                        if (isManual) updateToastMessage.value = "Güncelleme kontrolü başarısız (HTTP ${resp.code})"
+                    }
+                    return@launch
+                }
+                val body = resp.body?.string() ?: ""
+                val json = JSONObject(body)
+                val tagName = json.optString("tag_name", "").trim()
+                val notes = json.optString("body", "").trim()
+                val assets = json.optJSONArray("assets")
+                var apkUrl = ""
+                if (assets != null) {
+                    for (i in 0 until assets.length()) {
+                        val asset = assets.getJSONObject(i)
+                        val name = asset.optString("name", "")
+                        if (name.endsWith(".apk", ignoreCase = true)) {
+                            apkUrl = asset.optString("browser_download_url", "")
+                            break
+                        }
+                    }
+                }
+                if (apkUrl.isBlank() && tagName.isNotBlank()) {
+                    apkUrl = "https://github.com/sertay1/YamaNX/releases/download/$tagName/YamaNX.apk"
+                }
+
+                val hasUpdate = isNewerVersion(tagName, currentAppVersion)
+
+                withContext(Dispatchers.Main) {
+                    isCheckingUpdate.value = false
+                    isUpdateAvailable.value = hasUpdate
+                    updateTagName.value = tagName
+                    updateReleaseNotes.value = notes
+                    updateDownloadUrl.value = apkUrl
+                    if (hasUpdate) {
+                        showUpdatePromptDialog.value = true
+                    }
+                    if (isManual) {
+                        if (hasUpdate) {
+                            updateToastMessage.value = "Yeni sürüm bulundu: $tagName"
+                        } else {
+                            updateToastMessage.value = "Uygulamanız güncel! (v$currentAppVersion)"
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    isCheckingUpdate.value = false
+                    if (isManual) updateToastMessage.value = "Güncelleme kontrol hatası: ${e.message}"
+                }
+            }
+        }
+    }
+
+    fun downloadAndInstallUpdate(context: Context) {
+        if (isDownloadingUpdate.value) return
+        val url = updateDownloadUrl.value
+        if (url.isBlank()) {
+            updateToastMessage.value = "İndirme bağlantısı bulunamadı."
+            return
+        }
+
+        isDownloadingUpdate.value = true
+        updateDownloadProgress.value = 0f
+        updateStatusText.value = "Güncelleme indiriliyor..."
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val req = Request.Builder().url(url).build()
+                val resp = client.newCall(req).execute()
+                if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+                val body = resp.body ?: throw Exception("Boş yanıt")
+                val totalBytes = body.contentLength()
+
+                val apkFile = File(context.cacheDir, "YamaNX_update.apk")
+                if (apkFile.exists()) apkFile.delete()
+
+                body.byteStream().use { input ->
+                    apkFile.outputStream().use { output ->
+                        val buffer = ByteArray(32 * 1024)
+                        var read: Int
+                        var downloaded = 0L
+                        while (input.read(buffer).also { read = it } != -1) {
+                            output.write(buffer, 0, read)
+                            downloaded += read
+                            if (totalBytes > 0) {
+                                val progress = downloaded.toFloat() / totalBytes
+                                withContext(Dispatchers.Main) {
+                                    updateDownloadProgress.value = progress
+                                }
+                            }
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    isDownloadingUpdate.value = false
+                    updateDownloadProgress.value = 1f
+                    updateStatusText.value = "İndirme tamamlandı, yükleniyor..."
+                    installDownloadedApk(context, apkFile)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    isDownloadingUpdate.value = false
+                    updateStatusText.value = "Hata: ${e.message}"
+                    updateToastMessage.value = "İndirme hatası: ${e.message}"
+                }
+            }
+        }
+    }
+
+    fun installDownloadedApk(context: Context, file: File) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    updateToastMessage.value = "Lütfen 'Bilinmeyen uygulamaları yükle' iznini açın."
+                    val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                    return
+                }
+            }
+
+            val apkUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            updateToastMessage.value = "Yükleyici başlatılamadı: ${e.message}"
+        }
+    }
+
+    fun fetchPatches(force: Boolean = false) {
+        if (!force && allPatches.isNotEmpty()) {
+            viewModelScope.launch(Dispatchers.IO) { refreshInstalledStatus() }
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 withContext(Dispatchers.Main) {
@@ -130,33 +436,84 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun parseYamalar(data: String): List<Patch> {
         val list = mutableListOf<Patch>()
+        var index = 0
         for (lineRaw in data.split("\n")) {
             val line = lineRaw.trim()
-            if (line.isEmpty()) continue
+            if (line.isEmpty() || line.startsWith("#")) continue
             val parts = line.split("|")
             if (parts.size >= 2) {
-                val name = parts[0]
-                val titleId = parts[1].replace(Regex("[^a-zA-Z0-9]"), "").uppercase(Locale.getDefault())
+                val name = parts[0].trim()
+                val titleId = parts[1].replace(Regex("[^a-zA-Z0-9]"), "").uppercase(Locale.US)
                 if (titleId.isEmpty()) continue
-                var url = ""; var yapimci = ""; var version = "Belirtilmemiş"; var size = "Bilinmiyor"
+                var url = ""
+                var yapimci = "Bilinmiyor"
+                var version = "Belirtilmemiş"
+                var size = "Bilinmiyor"
                 if (parts.size >= 3) url = parts[2].trim()
-                if (parts.size >= 4) yapimci = parts[3].trim()
-                if (parts.size >= 5) {
-                    if (parts.size >= 6) { version = parts[4].trim(); size = parts[5].trim() }
-                    else {
-                        val p4 = parts[4].trim()
-                        if (p4.contains("MB", true) || p4.contains("GB", true)) size = p4 else version = p4
+
+                if (parts.size >= 6) {
+                    yapimci = parts[3].trim().ifEmpty { "Bilinmiyor" }
+                    version = parts[4].trim().ifEmpty { "Belirtilmemiş" }
+                    size = parts[5].trim().ifEmpty { "Bilinmiyor" }
+                } else if (parts.size == 5) {
+                    val p3 = parts[3].trim()
+                    val p4 = parts[4].trim()
+                    if (isSizeString(p4)) {
+                        yapimci = p3.ifEmpty { "Bilinmiyor" }
+                        size = p4
+                        version = "Belirtilmemiş"
+                    } else {
+                        yapimci = p3.ifEmpty { "Bilinmiyor" }
+                        version = p4.ifEmpty { "Belirtilmemiş" }
+                        size = "Bilinmiyor"
+                    }
+                } else if (parts.size == 4) {
+                    val p3 = parts[3].trim()
+                    if (isSizeString(p3)) {
+                        size = p3
+                        yapimci = "Bilinmiyor"
+                        version = "Belirtilmemiş"
+                    } else {
+                        yapimci = p3.ifEmpty { "Bilinmiyor" }
+                        size = "Bilinmiyor"
+                        version = "Belirtilmemiş"
                     }
                 }
-                list.add(Patch(name, titleId, url, yapimci, version, size))
+
+                // Eğer boyut hala tespit edilemediyse geriye doğru MB/GB/KB ara
+                if (size == "Bilinmiyor" || size.isBlank()) {
+                    for (p in parts.drop(2).reversed()) {
+                        val trimmed = p.trim()
+                        if (isSizeString(trimmed)) {
+                            size = trimmed
+                            if (p == yapimci) yapimci = "Bilinmiyor"
+                            break
+                        }
+                    }
+                }
+
+                val patch = Patch(
+                    name = name,
+                    titleId = titleId,
+                    url = url,
+                    yapimci = yapimci,
+                    patchVersion = version,
+                    size = size,
+                    originalIndex = index++,
+                    sizeBytes = parseSizeToBytes(size)
+                ).apply {
+                    isFavorited = isFavorite(titleId)
+                }
+                list.add(patch)
             }
         }
-        return list.sortedBy { it.name.lowercase(Locale.getDefault()) }
+        return list
     }
 
     fun normalizeForSearch(text: String): String {
-        val nfd = Normalizer.normalize(text, Normalizer.Form.NFD)
-        return nfd.replace(Regex("\\p{InCombiningDiacriticalMarks}"), "").lowercase(Locale.getDefault())
+        val lower = text.replace('İ', 'i').replace('I', 'ı').lowercase(Locale.forLanguageTag("tr-TR")).replace('ı', 'i')
+        val nfd = Normalizer.normalize(lower, Normalizer.Form.NFD)
+        return nfd.replace(Regex("\\p{InCombiningDiacriticalMarks}"), "")
     }
 
     fun setGameFolderUri(uri: Uri) {
@@ -265,6 +622,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             try {
+                // Ensure root directory exists before downloading
+                if (!yamaNxDir.exists()) {
+                    yamaNxDir.mkdirs()
+                }
+
                 // Download
                 val response = client.newCall(Request.Builder().url(patch.url).build()).execute()
                 if (!response.isSuccessful) throw Exception("İndirme başarısız (HTTP ${response.code})")
@@ -306,14 +668,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 // Install to YamaNX/[GameName]/[TitleId]/
                 val gameDir = File(yamaNxDir, patch.name)
                 val destDir = File(gameDir, patch.titleId)
-                
+
                 destDir.deleteRecursively()
                 destDir.mkdirs()
-                
+
                 if (!destDir.exists()) {
-                    throw Exception("YamaNX klasörüne yazılamadı. Dosya iznini kontrol edin.")
+                    throw Exception("YamaNX klasörüne yazılamadı. Lütfen 'Ayarlar' menüsünden Tüm Dosyalara Erişim İznini kontrol edin.")
                 }
-                
+
                 titleIdFolder.copyRecursively(destDir, overwrite = true)
 
                 tempExtractDir.deleteRecursively()

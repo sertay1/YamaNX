@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0E0E18">
+  <meta name="msapplication-navbutton-color" content="#0E0E18">
+  <meta name="apple-mobile-web-app-status-bar-style" content="#0E0E18">
+  <title>YamaNX PC - Nintendo Switch Türkçe Yama Arşivi</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="shortcut icon" type="image/x-icon" href="favicon.ico">
+  <link rel="apple-touch-icon" href="assets/icon.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="text/javascript" src="/eel.js"></script>
+</head>
+<body>
+
+  <!-- ÖZEL PENCERE BAŞLIĞI / TAŞIMA ÇUBUĞU (TITLEBAR) -->
+  <header class="custom-titlebar pywebview-drag-region" id="custom-titlebar">
+    <div class="titlebar-left">
+      <img src="assets/icon.png" alt="YamaNX" class="titlebar-app-icon">
+      <span class="titlebar-app-name">YamaNX PC</span>
+    </div>
+    <div class="titlebar-drag-area"></div>
+    <div class="titlebar-controls">
+      <button class="win-btn" id="btn-win-min" title="Simge Durumuna Küçült">
+        <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
+      </button>
+      <button class="win-btn" id="btn-win-max" title="Ekranı Kapla / Geri Yükle">
+        <svg width="10" height="10" viewBox="0 0 10 10" id="icon-win-max">
+          <rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor"/>
+        </svg>
+      </button>
+      <button class="win-btn win-close" id="btn-win-close" title="Kapat">
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <!-- SOL PANEL (SIDEBAR) -->
+    <aside class="sidebar">
+    <div>
+      <div class="brand-section">
+        <img src="assets/logo.png" alt="YamaNX" class="brand-logo-img">
+      </div>
+
+      <!-- Menü Butonları -->
+      <nav class="nav-menu">
+        <div class="nav-item active" data-tab="yamalar">
+          <div class="nav-item-left">
+            <span class="nav-item-icon">🎮</span>
+            <span>Tüm Yamalar</span>
+          </div>
+          <span class="nav-badge" id="badge-all-count">0</span>
+        </div>
+
+        <div class="nav-item" data-tab="favoriler">
+          <div class="nav-item-left">
+            <span class="nav-item-icon">⭐</span>
+            <span>Favoriler</span>
+          </div>
+          <span class="nav-badge gold" id="badge-fav-count">0</span>
+        </div>
+
+        <div class="nav-item" data-tab="yuklu">
+          <div class="nav-item-left">
+            <span class="nav-item-icon">📥</span>
+            <span>Yüklü İçerikler</span>
+          </div>
+          <span class="nav-badge green" id="badge-installed-count">0</span>
+        </div>
+
+        <div class="nav-item" data-tab="ayarlar">
+          <div class="nav-item-left">
+            <span class="nav-item-icon">⚙️</span>
+            <span>Ayarlar</span>
+          </div>
+        </div>
+
+        <div class="nav-item" data-tab="hakkinda">
+          <div class="nav-item-left">
+            <span class="nav-item-icon">ℹ️</span>
+            <span>Hakkında</span>
+          </div>
+        </div>
+      </nav>
+    </div>
+
+    <!-- Aktif Emülatör Seçici (Alt Kısım) -->
+    <div class="emu-section">
+      <span class="emu-section-title">Hedef Emülatör</span>
+      <div class="emu-grid">
+        <div class="emu-chip" data-emu="Ryujinx">
+          <span class="emu-status-dot" id="dot-ryujinx"></span>
+          <span>Ryujinx</span>
+        </div>
+        <div class="emu-chip" data-emu="Yuzu">
+          <span class="emu-status-dot" id="dot-yuzu"></span>
+          <span>Yuzu</span>
+        </div>
+        <div class="emu-chip" data-emu="Citron">
+          <span class="emu-status-dot" id="dot-citron"></span>
+          <span>Citron</span>
+        </div>
+        <div class="emu-chip" data-emu="Eden">
+          <span class="emu-status-dot" id="dot-eden"></span>
+          <span>Eden</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ANA İÇERİK ALANI -->
+  <div class="main-wrapper">
+    <!-- Üst Bar -->
+    <header class="topbar">
+      <div class="topbar-titles">
+        <h1 id="topbar-title">Tüm Yamalar</h1>
+        <p id="topbar-sub">Yükleniyor...</p>
+      </div>
+
+      <div class="topbar-controls" id="topbar-controls">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" class="search-input" placeholder="Oyun adı veya Title ID ile ara...">
+          <button id="search-clear" class="search-clear-btn">✕</button>
+        </div>
+
+        <select id="sort-select" class="sort-select">
+          <option value="az">Sırala: A - Z</option>
+          <option value="za">Sırala: Z - A</option>
+          <option value="newest">Sırala: En Yeni</option>
+          <option value="size_desc">Sırala: Boyut (Büyükten Küçüğe)</option>
+          <option value="size_asc">Sırala: Boyut (Küçükten Büyüğe)</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- İçerik Alanı -->
+    <div class="content-area">
+      
+      <!-- 1. TÜM YAMALAR -->
+      <div id="view-yamalar" class="tab-view active">
+        <!-- YENİ EKLENENLER (FEATURED CAROUSEL) -->
+        <section class="featured-section" id="featured-section">
+          <div class="section-header">
+            <div class="section-title-wrap">
+              <span class="section-badge-pill">✨ YENİ</span>
+              <h2 class="section-title">Yeni Eklenenler</h2>
+              <span class="section-subtitle">En son eklenen Switch Türkçe yamaları</span>
+            </div>
+          </div>
+          <div class="featured-carousel-track" id="featured-track"></div>
+        </section>
+
+        <!-- ARŞİVDEKİ YAMALAR BAŞLIĞI -->
+        <div class="grid-section-header">
+          <div class="section-title-wrap">
+            <span class="section-icon">🎮</span>
+            <h2 class="section-title" id="grid-header-title">Arşivdeki Yamalar</h2>
+            <span class="section-count-badge" id="grid-header-count">0 yama</span>
+          </div>
+        </div>
+
+        <div class="card-grid" id="grid-yamalar"></div>
+      </div>
+
+      <!-- 2. FAVORİLER -->
+      <div id="view-favoriler" class="tab-view">
+        <div class="card-grid" id="grid-favoriler"></div>
+      </div>
+
+      <!-- 3. YÜKLÜ İÇERİKLER -->
+      <div id="view-yuklu" class="tab-view">
+        <div class="card-grid" id="grid-yuklu"></div>
+      </div>
+
+      <!-- 4. AYARLAR -->
+      <div id="view-ayarlar" class="tab-view">
+        <div class="settings-grid" id="settings-container"></div>
+      </div>
+
+      <!-- 5. HAKKINDA -->
+      <div id="view-hakkinda" class="tab-view">
+        <div class="about-wrapper">
+          <div class="about-intro-card">
+            <h2>Merhaba, ben SertAy!</h2>
+            <p>
+              Hiçbir yazılım tecrübem olmadan, tamamen yapay zeka desteği ve büyük bir emekle geliştirdiğim YamaNX'in PC sürümünü sizlere sunmaktan mutluluk duyuyorum. Favoriler, anlık arama, gelişmiş sıralama ve emülatör otomatik kurulum özellikleri artık PC sürümünde de aktif!
+            </p>
+            <p>
+              Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücretsiz yaması ve 200'den fazla Soner Çakır, Profesör Pikachu, Dede00, emre, davetsiz57 gibi pek çok çevirmen arkadaşın internetten bulduğum yamaları yer alıyor. Tespit edebildiğim tüm isimleri oyun kartlarına ekledim.
+            </p>
+            <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 0;">
+              İyi oyunlar dilerim! Destek ve önerileriniz için topluluk bağlantılarına katılabilirsiniz.
+            </p>
+          </div>
+
+          <div class="community-grid">
+            <div class="community-card">
+              <img src="assets/qr_sertay.png" alt="SertAy Linktree" class="community-qr">
+              <div>
+                <div class="community-title">SertAy Tüm Linkler</div>
+                <div class="community-desc">Linktree & Proje Destek</div>
+              </div>
+              <button class="btn btn-primary" onclick="openUrl('https://linktr.ee/yamanx')">Linktree Aç</button>
+            </div>
+
+            <div class="community-card">
+              <img src="assets/qr_swatalk.png" alt="Swatalk Discord" class="community-qr">
+              <div>
+                <div class="community-title">Swatalk Discord</div>
+                <div class="community-desc">470+ Switch Türkçe Yaması</div>
+              </div>
+              <button class="btn btn-secondary" onclick="openUrl('https://discord.com/invite/xshWw2jBK6')">Discord'a Katıl</button>
+            </div>
+
+            <div class="community-card">
+              <img src="assets/qr_soner.png" alt="Soner Çakır Discord" class="community-qr">
+              <div>
+                <div class="community-title">Soner Çakır Discord</div>
+                <div class="community-desc">200+ Çeviri Topluluğu</div>
+              </div>
+              <button class="btn btn-secondary" onclick="openUrl('https://discord.com/invite/tB93ZUsRYE')">Discord'a Katıl</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  </div>
+
+  <!-- OYUN DETAY MODALI -->
+  <div class="modal-overlay" id="modal-game">
+    <div class="modal-container game-modal">
+      <button class="modal-close-btn" onclick="closeGameModal()">✕</button>
+      
+      <div class="modal-banner">
+        <img id="modal-cover-img" src="" alt="Kapak" class="modal-banner-img">
+        <div class="modal-banner-gradient"></div>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-title-row">
+          <div class="modal-game-title" id="modal-game-title">Oyun Adı</div>
+          <button class="modal-fav-toggle-btn" id="modal-fav-btn" onclick="toggleModalFavorite()">
+            <svg class="star-icon" id="modal-fav-star" width="16" height="16" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span id="modal-fav-label">Favorilere Ekle</span>
+          </button>
+        </div>
+
+        <div class="modal-meta-grid">
+          <div class="meta-item">
+            <span class="meta-label">Title ID</span>
+            <span class="meta-val">
+              <span id="modal-tid">0100000000000000</span>
+              <button class="copy-tid-btn" id="modal-copy-btn" onclick="copyModalTitleId()">Kopyala</button>
+            </span>
+          </div>
+
+          <div class="meta-item">
+            <span class="meta-label">Çevirmen / Yapımcı</span>
+            <span class="meta-val" id="modal-yapimci">Bilinmiyor</span>
+          </div>
+
+          <div class="meta-item">
+            <span class="meta-label">Yama Sürümü</span>
+            <span class="meta-val" id="modal-version">v1.0</span>
+          </div>
+
+          <div class="meta-item">
+            <span class="meta-label">Paket Boyutu</span>
+            <span class="meta-val" id="modal-size">--</span>
+          </div>
+
+          <div class="meta-item">
+            <span class="meta-label">Hedef Emülatör</span>
+            <span class="meta-val" id="modal-target-emu">Ryujinx</span>
+          </div>
+
+          <div class="meta-item">
+            <span class="meta-label">Kurulum Durumu</span>
+            <span class="meta-val" id="modal-install-status">Kurulu Değil</span>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="modal-action-btn" style="flex: 2; height: 46px; font-size: 14px;" onclick="handleModalAction()">
+            İNDİR VE KUR
+          </button>
+          <button class="btn btn-green" id="modal-open-folder-btn" style="display:none; flex: 1; height: 46px;" onclick="openCurrentModFolder()">
+            Klasörü Aç
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- İNDİRME VE KURULUM MODALI -->
+  <div class="modal-overlay" id="modal-download">
+    <div class="modal-container download-modal">
+      <div class="download-title" id="dl-title">Yama İndiriliyor</div>
+      <div class="download-status-text" id="dl-status">Hazırlanıyor...</div>
+
+      <div class="progress-track">
+        <div class="progress-fill" id="dl-fill"></div>
+        <span class="progress-pct-label" id="dl-pct-label">%0</span>
+      </div>
+
+      <div class="post-install-box" id="dl-post-box" style="display: none;">
+        <span class="post-install-title">🎉 KURULUM BAŞARIYLA TAMAMLANDI</span>
+        <div>1. Emülatörünüzü tamamen kapatıp yeniden başlatın.</div>
+        <div id="dl-post-hint">2. Emülatör eklentiler / modlar menüsünden yamayı kontrol edin.</div>
+        <div>3. RomFS yamaları geneldir, ExeFS yamaları sürüm uyumu gerektirir.</div>
+      </div>
+
+      <div style="margin-top: 8px;">
+        <button class="btn btn-secondary" id="dl-btn-cancel" onclick="cancelDownload()">İptal Et</button>
+        <button class="btn btn-primary" id="dl-btn-close" style="display: none; width: 160px; margin: 0 auto;" onclick="closeDownloadModal()">Tamam</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GÜNCELLEME BİLDİRİM MODALI -->
+  <div class="modal-overlay" id="modal-update">
+    <div class="modal-container update-modal" style="width: 520px; padding: 28px;">
+      <div style="font-size: 20px; font-weight: 700; color: #FFFFFF; margin-bottom: 8px;">
+        🎉 Yeni Bir Güncelleme Mevcut!
+      </div>
+      <div id="update-modal-ver" style="font-size: 13px; color: var(--green); font-weight: 600; margin-bottom: 12px;">
+        Yeni Sürüm Mevcut!
+      </div>
+      <div id="update-modal-notes" style="background: rgba(0,0,0,0.3); border: 1px solid var(--stroke); border-radius: var(--radius-sm); padding: 12px; font-size: 12px; color: var(--text-muted); max-height: 180px; overflow-y: auto; line-height: 1.5; margin-bottom: 20px; white-space: pre-wrap;">
+        Yenilikler...
+      </div>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="btn btn-secondary" onclick="closeUpdateModal()">Daha Sonra</button>
+        <button class="btn btn-primary" id="update-modal-dl-btn" onclick="openUpdateDownload()">Şimdi Güncelle</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

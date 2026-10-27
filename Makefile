@@ -40,7 +40,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 TARGET		:=	YamaNX
 APP_TITLE	:=	YamaNX
 APP_AUTHOR	:=	SertAy
-APP_VERSION	:=	2.0.0
+APP_VERSION	:=	2.1.0
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
@@ -165,7 +165,7 @@ all: $(BUILD)
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
-	@$(MAKE) --no-print-directory -C $(BUILD) -f "$(CURDIR)/Makefile"
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 #---------------------------------------------------------------------------------
 clean:

@@ -21,6 +21,7 @@
 #include <cstring>
 #include <condition_variable>
 #include <deque>
+#include <unordered_set>
 
 #define SCREEN_W 1280
 #define SCREEN_H 720
@@ -29,17 +30,19 @@ extern "C" { mode_t umask(mode_t mask) { return 022; } }
 
 #include "types.h"
 #include "updater.hpp"
+#include "home_menu_installer.hpp"
 
 // --- Updater UI globals ---
 static std::string toastMessage = "";
 static int toastTimer = 0;
 static void showToast(const std::string& msg) {
     toastMessage = msg;
-    toastTimer = 180; // ~3 saniye
+    toastTimer = 60; // ~1 saniye (60 FPS)
 }
 
 static bool manualUpdateCheckRequested = false;
 static bool updateModalShownOnce = false;
+static bool appletModalShownOnce = false;
 static bool pendingRelaunch = false;   // döngü bitince, temizlikten sonra envSetNextLoad
 static UpdateState prevUpdaterState = UpdateState::Idle;
 
@@ -68,8 +71,17 @@ static const SortOption g_sortOptions[] = {
 
 static uint64_t parseSizeToBytes(const std::string& sizeStr) {
     if (sizeStr.empty()) return 0;
+    std::string s = sizeStr;
+    for (char& c : s) {
+        if (c == ',') c = '.';
+    }
+    size_t start = 0;
+    while (start < s.size() && !isdigit((unsigned char)s[start]) && s[start] != '.') {
+        start++;
+    }
+    if (start >= s.size()) return 0;
     char* end = nullptr;
-    double val = strtod(sizeStr.c_str(), &end);
+    double val = strtod(s.c_str() + start, &end);
     if (val <= 0.0) return 0;
     while (end && *end == ' ') end++;
     if (!end || *end == '\0') return (uint64_t)val;
@@ -168,6 +180,8 @@ static void sortPatchesList(std::vector<Patch>& list, SortMode mode) {
             break;
         case SORT_SIZE_ASC:
             std::stable_sort(list.begin(), list.end(), [](const Patch& a, const Patch& b) {
+                if (a.size_bytes == 0 && b.size_bytes > 0) return false;
+                if (b.size_bytes == 0 && a.size_bytes > 0) return true;
                 if (a.size_bytes != b.size_bytes) return a.size_bytes < b.size_bytes;
                 return a.normalized_name < b.normalized_name;
             });
@@ -177,6 +191,121 @@ static void sortPatchesList(std::vector<Patch>& list, SortMode mode) {
 
 // Font romfs yerine bellekten okunur; böylece kurulum sırasında romfsExit() güvenli olur.
 static std::vector<uint8_t> g_fontData;
+
+// --- Home Menu Shortcut (NSP Forwarder) Globals & Helpers ---
+static std::string g_currentNroPath = "sdmc:/switch/YamaNX.nro";
+static std::string g_shortcutStatusMsg = "";
+
+static bool isShortcutInstalled() {
+    return HomeMenuInstaller::isShortcutInstalled();
+}
+
+static std::string pendingLaunchNro = "";
+
+static std::string findInstallerNroPath() {
+    static const char* candidatePaths[] = {
+        "sdmc:/switch/DBI.nro",
+        "sdmc:/switch/DBI/DBI.nro",
+        "sdmc:/switch/dbi.nro",
+        "sdmc:/switch/dbi/dbi.nro",
+        "sdmc:/switch/Goldleaf.nro",
+        "sdmc:/switch/Goldleaf/Goldleaf.nro",
+        "sdmc:/switch/goldleaf.nro",
+        "sdmc:/switch/goldleaf/goldleaf.nro",
+        "sdmc:/switch/Tinleaf.nro",
+        "sdmc:/switch/Tinleaf/Tinleaf.nro",
+        "sdmc:/switch/Awoo-Installer.nro",
+        "sdmc:/switch/Awoo-Installer/Awoo-Installer.nro"
+    };
+    for (const char* p : candidatePaths) {
+        struct stat st;
+        if (stat(p, &st) == 0 && st.st_size > 0) {
+            return std::string(p);
+        }
+    }
+    return "";
+}
+
+static std::string getInstallerName(const std::string& path) {
+    std::string lower = path;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    if (lower.find("dbi") != std::string::npos) return "DBI";
+    if (lower.find("goldleaf") != std::string::npos) return "Goldleaf";
+    if (lower.find("tinleaf") != std::string::npos) return "Tinleaf";
+    if (lower.find("awoo") != std::string::npos) return "Awoo Installer";
+    return "Yükleyici";
+}
+
+static void syncShortcutPaths() {
+    mkdir("sdmc:/config", 0777);
+    mkdir("sdmc:/config/YamaNX", 0777);
+    FILE* f = fopen("sdmc:/config/YamaNX/nro_path.txt", "w");
+    if (f) {
+        fprintf(f, "%s\n", g_currentNroPath.c_str());
+        fclose(f);
+    }
+    
+    mkdir("sdmc:/atmosphere", 0777);
+    mkdir("sdmc:/atmosphere/contents", 0777);
+    mkdir("sdmc:/atmosphere/contents/0100424018A42000", 0777);
+    mkdir("sdmc:/atmosphere/contents/0100424018A42000/romfs", 0777);
+    
+    FILE* fNro = fopen("sdmc:/atmosphere/contents/0100424018A42000/romfs/nextNroPath", "wb");
+    if (fNro) {
+        fwrite(g_currentNroPath.c_str(), 1, g_currentNroPath.length(), fNro);
+        fclose(fNro);
+    }
+    
+    FILE* fArgv = fopen("sdmc:/atmosphere/contents/0100424018A42000/romfs/nextArgv", "wb");
+    if (fArgv) {
+        fwrite(g_currentNroPath.c_str(), 1, g_currentNroPath.length(), fArgv);
+        fclose(fArgv);
+    }
+}
+
+static void createShortcutNsp() {
+    syncShortcutPaths();
+    
+    // Güvenlik yedeği olarak sdmc:/switch/YamaNX_Shortcut.nsp dosyasını da hazırla
+    mkdir("sdmc:/switch", 0777);
+    FILE* src = fopen("romfs:/YamaNX_Shortcut.nsp", "rb");
+    if (src) {
+        FILE* dst = fopen("sdmc:/switch/YamaNX_Shortcut.nsp", "wb");
+        if (dst) {
+            char buffer[16384];
+            size_t bytes;
+            while ((bytes = fread(buffer, 1, sizeof(buffer), src)) > 0) {
+                fwrite(buffer, 1, bytes, dst);
+            }
+            fclose(dst);
+        }
+        fclose(src);
+    }
+
+    // Doğrudan Switch Ana Menüsüne (NCM & NS) yerel kurulum yap
+    // (Önceki veya bozuk kalmış tile'ı otomatik temizleyip baştan kurar)
+    std::string installMsg;
+    int res = HomeMenuInstaller::installHomeMenuShortcut(installMsg);
+    if (res == 1) {
+        g_shortcutStatusMsg = installMsg;
+        showToast("Kısayol Ana Menüye Eklendi!");
+        return;
+    } else if (res == 2) {
+        g_shortcutStatusMsg = installMsg + "\n\nAyrıca sdmc:/switch/YamaNX_Shortcut.nsp dosyası da hazırlandı, dilerseniz DBI ile de kurabilirsiniz.";
+        showToast("Sigpatches eksik!");
+        return;
+    }
+
+    // Doğrudan kurulumda beklenmedik bir sistem hatası olursa yedek seçenek (DBI/Goldleaf yönlendirmesi)
+    std::string installer = findInstallerNroPath();
+    std::string installerName = installer.empty() ? "" : getInstallerName(installer);
+    if (!installer.empty()) {
+        g_shortcutStatusMsg = "Doğrudan kurulum tamamlanamadı (" + installMsg + ").\n\nAncak kısayol dosyası hazırlandı:\nsdmc:/switch/YamaNX_Shortcut.nsp\n\nCihazınızda " + installerName + " bulundu! Kurulum için (X) tuşuna basarak " + installerName + "'ı başlatabilirsiniz.";
+    } else {
+        g_shortcutStatusMsg = "Doğrudan kurulum tamamlanamadı (" + installMsg + ").\n\nKısayol NSP dosyası SD karta hazırlandı:\nsdmc:/switch/YamaNX_Shortcut.nsp\n\nHedef NRO: " + g_currentNroPath + "\n\nDBI, Goldleaf veya Tinfoil ile bu NSP'yi 1 defa kurabilirsiniz.";
+    }
+    showToast("NSP dosyası hazırlandı");
+}
 
 // --- globals ---
 std::vector<Patch> all_patches;
@@ -189,6 +318,7 @@ std::string searchQuery = "";
 AppState currentState = STATE_TUM_YAMALAR;
 int selectedMenu = 0;
 int selectedIndex = 0;
+static int settingsFocusIndex = 0;
 
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
@@ -218,7 +348,7 @@ static void toggleFavorite(const std::string& tid) {
     } else {
         g_favorites.insert(utid);
         nowFav = true;
-        showToast("Favorilere eklendi! ★");
+        showToast("Favorilere eklendi!");
     }
     saveFavorites();
 
@@ -252,10 +382,17 @@ char patchThreadStack[0x100000] __attribute__((aligned(0x1000)));
 
 std::string deviceGameVersion = "";
 
-std::deque<std::string> imageDownloadQueue; // deque: O(1) front erase
+struct ReadyCover {
+    std::string tid;
+    SDL_Surface* surf;
+};
+
+std::deque<std::string> imageDownloadQueue; // Öncelikli sıra: ekrandaki ve yakınındaki kapaklar
+std::unordered_set<std::string> g_enqueuedCovers; // O(1) anında kontrol kümesi
+std::vector<std::string> g_allCoverQueue; // Arka plan genel önbellekleme sırası
 std::mutex imageQueueMutex;
 std::map<std::string, SDL_Texture*> coverTextures;
-std::vector<std::string> readyImages;
+std::vector<ReadyCover> readyCovers;
 std::map<std::string, int> coverFailedCount;
 std::mutex imageReadyMutex;
 
@@ -527,7 +664,7 @@ void filterPatches() {
     if (!searchQuery.empty()) nSearch = normalizeString(searchQuery);
     
     for (auto& p : all_patches) {
-        if (currentState == STATE_TUM_YAMALAR && isOfflineMode) continue;
+        if ((currentState == STATE_TUM_YAMALAR || currentState == STATE_YENI_EKLENENLER) && isOfflineMode) continue;
         if (currentState == STATE_YUKLU_YAMALAR && !p.is_installed && !p.game_installed) continue;
         if (currentState == STATE_FAVORILER && !p.is_favorited) continue;
         if (!searchQuery.empty()) {
@@ -537,7 +674,18 @@ void filterPatches() {
     }
     
     // Sıralama uygula
-    sortPatchesList(filtered_patches, currentSortMode);
+    if (currentState == STATE_YENI_EKLENENLER) {
+        // En son eklenen yamalar (original_index azalan sıralama)
+        std::stable_sort(filtered_patches.begin(), filtered_patches.end(), [](const Patch& a, const Patch& b) {
+            return a.original_index > b.original_index;
+        });
+        // Arama yapılmıyorsa son eklenen 15 oyunu listele
+        if (searchQuery.empty() && filtered_patches.size() > 15) {
+            filtered_patches.resize(15);
+        }
+    } else {
+        sortPatchesList(filtered_patches, currentSortMode);
+    }
 
     if (currentState == STATE_YUKLU_YAMALAR) {
         std::stable_sort(filtered_patches.begin(), filtered_patches.end(), [](const Patch& a, const Patch& b) {
@@ -741,58 +889,69 @@ void fetchPatches(const std::string& gist_url) {
     while ((pos = readBuffer.find(delimiter)) != std::string::npos) {
         token = readBuffer.substr(0, pos);
         readBuffer.erase(0, pos + delimiter.length());
-        size_t p1 = token.find('|');
-        if (p1 != std::string::npos) {
-            size_t p2 = token.find('|', p1 + 1);
-            if (p2 != std::string::npos) {
-                Patch p;
-                p.name = token.substr(0, p1);
-                p.title_id = token.substr(p1 + 1, p2 - p1 - 1);
-                p.size = "Bilinmiyor";
-                std::string remainder = token.substr(p2 + 1);
-                if (!remainder.empty() && remainder.back() == '\r') remainder.pop_back();
-                
-                size_t p3 = remainder.find('|');
-                if (p3 != std::string::npos) {
-                    p.url = remainder.substr(0, p3);
-                    std::string rem2 = remainder.substr(p3 + 1);
-                    size_t p4 = rem2.find('|');
-                    if (p4 != std::string::npos) {
-                        p.yapimci = rem2.substr(0, p4);
-                        std::string rem3 = rem2.substr(p4 + 1);
-                        size_t p5 = rem3.find('|');
-                        if (p5 != std::string::npos) {
-                            p.patch_version = rem3.substr(0, p5);
-                            p.size = rem3.substr(p5 + 1);
-                        } else {
-                            // Eğer sadece 1 alan girilmişse, bu versiyon mu boyut mu?
-                            if (rem3.find("MB") != std::string::npos || rem3.find("GB") != std::string::npos || 
-                                rem3.find("mb") != std::string::npos || rem3.find("gb") != std::string::npos) {
-                                p.size = rem3;
-                                p.patch_version = "Bilinmiyor";
-                            } else {
-                                p.patch_version = rem3;
-                            }
-                        }
-                    } else {
-                        p.yapimci = rem2;
-                        p.patch_version = "";
-                    }
-                } else {
-                    p.url = remainder;
-                    p.yapimci = "";
+        // Split line by '|'
+        std::vector<std::string> parts;
+        size_t last = 0, next = 0;
+        while ((next = token.find('|', last)) != std::string::npos) {
+            parts.push_back(token.substr(last, next - last));
+            last = next + 1;
+        }
+        parts.push_back(token.substr(last));
+
+        // Trim \r from last part if any
+        if (!parts.empty() && !parts.back().empty() && parts.back().back() == '\r') {
+            parts.back().pop_back();
+        }
+
+        if (parts.size() >= 3) {
+            Patch p;
+            p.name = parts[0];
+            p.title_id = parts[1];
+            p.url = parts[2];
+            p.yapimci = "";
+            p.patch_version = "";
+            p.size = "Bilinmiyor";
+
+            auto isSizeString = [](const std::string& s) {
+                std::string up = s;
+                std::transform(up.begin(), up.end(), up.begin(), ::toupper);
+                return (up.find("MB") != std::string::npos || 
+                        up.find("GB") != std::string::npos || 
+                        up.find("KB") != std::string::npos ||
+                        up.find(" B") != std::string::npos);
+            };
+
+            if (parts.size() >= 6) {
+                p.yapimci = parts[3];
+                p.patch_version = parts[4];
+                p.size = parts[5];
+            } else if (parts.size() == 5) {
+                p.yapimci = parts[3];
+                if (isSizeString(parts[4])) {
+                    p.size = parts[4];
                     p.patch_version = "";
+                } else {
+                    p.patch_version = parts[4];
+                    p.size = "Bilinmiyor";
                 }
-                
-                p.title_id.erase(std::remove_if(p.title_id.begin(), p.title_id.end(), [](unsigned char c){ return !std::isalnum(c); }), p.title_id.end());
-                std::transform(p.title_id.begin(), p.title_id.end(), p.title_id.begin(), ::toupper);
-                p.is_installed = false;
-                p.normalized_name = normalizeString(p.name);
-                p.size_bytes = parseSizeToBytes(p.size);
-                p.original_index = (int)all_patches.size();
-                p.is_favorited = isFavorite(p.title_id);
-                all_patches.push_back(p);
+            } else if (parts.size() == 4) {
+                if (isSizeString(parts[3])) {
+                    p.size = parts[3];
+                    p.yapimci = "";
+                } else {
+                    p.yapimci = parts[3];
+                    p.size = "Bilinmiyor";
+                }
             }
+
+            p.title_id.erase(std::remove_if(p.title_id.begin(), p.title_id.end(), [](unsigned char c){ return !std::isalnum(c); }), p.title_id.end());
+            std::transform(p.title_id.begin(), p.title_id.end(), p.title_id.begin(), ::toupper);
+            p.is_installed = false;
+            p.normalized_name = normalizeString(p.name);
+            p.size_bytes = parseSizeToBytes(p.size);
+            p.original_index = (int)all_patches.size();
+            p.is_favorited = isFavorite(p.title_id);
+            all_patches.push_back(p);
         }
     }
     std::sort(all_patches.begin(), all_patches.end(), [](const Patch& a, const Patch& b) {
@@ -806,12 +965,13 @@ void fetchPatches(const std::string& gist_url) {
 
     filterPatches();
     
-    std::lock_guard<std::mutex> lock(imageQueueMutex);
-    for (const auto& p : all_patches) {
-        // deque ile O(n) arama hâlâ gerekli ama push/pop O(1)
-        bool already = false;
-        for (const auto& id : imageDownloadQueue) { if (id == p.title_id) { already = true; break; } }
-        if (!already) imageDownloadQueue.push_back(p.title_id);
+    {
+        std::lock_guard<std::mutex> lock(imageQueueMutex);
+        g_allCoverQueue.clear();
+        g_allCoverQueue.reserve(all_patches.size());
+        for (const auto& p : all_patches) {
+            g_allCoverQueue.push_back(p.title_id);
+        }
     }
 }
 
@@ -836,68 +996,102 @@ void imageDownloaderFunc(void* arg) {
 
     std::vector<std::string> sources = {"GITHUB", "US", "EN", "EU", "JA"};
     while (appRunning) {
+        // Ana iş parçacığında GPU'ya yüklenmeyi bekleyen çok fazla kapak varsa kısa bir mola ver
+        {
+            std::lock_guard<std::mutex> rlock(imageReadyMutex);
+            if (readyCovers.size() >= 8) {
+                svcSleepThread(20000000ull); // 20ms bekle
+                continue;
+            }
+        }
+
         std::string targetTitleId = "";
+        bool isPriority = false;
         {
             std::lock_guard<std::mutex> lock(imageQueueMutex);
             if (!imageDownloadQueue.empty()) {
                 targetTitleId = imageDownloadQueue.front();
-                imageDownloadQueue.pop_front(); // O(1) - deque avantajı
+                imageDownloadQueue.pop_front();
+                isPriority = true;
+            } else if (!g_allCoverQueue.empty()) {
+                targetTitleId = g_allCoverQueue.back();
+                g_allCoverQueue.pop_back();
+                isPriority = false;
             }
         }
-        
-        if (!targetTitleId.empty()) {
-            std::vector<uint8_t> buffer;
-            bool success = false;
-            std::string sdPath = "sdmc:/YamaNX_Covers/" + targetTitleId + ".jpg";
-            
-            FILE* fp = fopen(sdPath.c_str(), "rb");
-            if (fp) {
-                fseek(fp, 0, SEEK_END);
-                size_t size = ftell(fp);
-                fseek(fp, 0, SEEK_SET);
-                buffer.resize(size);
-                fread(buffer.data(), 1, size, fp);
-                fclose(fp);
-                if (buffer.size() > 2000) success = true;
+
+        if (targetTitleId.empty()) {
+            svcSleepThread(50000000ull); // 50ms bekle
+            continue;
+        }
+
+        // Başarısızlık sayısı 3 veya üzeriyse atla
+        {
+            std::lock_guard<std::mutex> rlock(imageReadyMutex);
+            if (coverFailedCount.find(targetTitleId) != coverFailedCount.end() && coverFailedCount[targetTitleId] >= 3) {
+                continue;
             }
-            
-            if (!success) {
-                CURL *curl = curl_easy_init();
-                if (curl) {
-                    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-                    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
-                    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-                    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-                    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
-                    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 6L); 
-                    
-                    for (const auto& source : sources) {
-                        buffer.clear();
-                        std::string url;
-                        if (source == "GITHUB") url = "https://raw.githubusercontent.com/sertay1/YamaNX-Covers/main/" + targetTitleId + ".jpg";
-                        else url = "https://art.gametdb.com/switch/coverm/" + source + "/" + targetTitleId + ".jpg";
-                        
-                        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-                        CURLcode res = curl_easy_perform(curl);
-                        if (res == CURLE_OK && buffer.size() > 2000) { 
-                            success = true; 
-                            mkdir("sdmc:/YamaNX_Covers", 0777);
-                            FILE* out = fopen(sdPath.c_str(), "wb");
-                            if (out) { fwrite(buffer.data(), 1, buffer.size(), out); fclose(out); }
-                            break; 
+        }
+
+        std::string sdPath = "sdmc:/YamaNX_Covers/" + targetTitleId + ".jpg";
+        SDL_Surface* surf = nullptr;
+
+        // 1. Önce SD kartta mevcut mu kontrol et ve arka planda Surface olarak çöz
+        struct stat st;
+        if (stat(sdPath.c_str(), &st) == 0 && st.st_size > 2000) {
+            surf = IMG_Load(sdPath.c_str());
+        }
+
+        // 2. SD kartta yoksa veya bozuksa internetten indir
+        if (!surf && !isOfflineMode) {
+            CURL *curl = curl_easy_init();
+            if (curl) {
+                std::vector<uint8_t> buffer;
+                curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+                curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
+                curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+                curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+                curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+                curl_easy_setopt(curl, CURLOPT_TIMEOUT, 6L);
+
+                for (const auto& source : sources) {
+                    buffer.clear();
+                    std::string url;
+                    if (source == "GITHUB") url = "https://raw.githubusercontent.com/sertay1/YamaNX-Covers/main/" + targetTitleId + ".jpg";
+                    else url = "https://art.gametdb.com/switch/coverm/" + source + "/" + targetTitleId + ".jpg";
+
+                    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+                    CURLcode res = curl_easy_perform(curl);
+                    if (res == CURLE_OK && buffer.size() > 2000) {
+                        mkdir("sdmc:/YamaNX_Covers", 0777);
+                        FILE* out = fopen(sdPath.c_str(), "wb");
+                        if (out) { fwrite(buffer.data(), 1, buffer.size(), out); fclose(out); }
+
+                        SDL_RWops* rw = SDL_RWFromMem(buffer.data(), (int)buffer.size());
+                        if (rw) {
+                            surf = IMG_Load_RW(rw, 1);
                         }
+                        break;
                     }
-                    curl_easy_cleanup(curl);
                 }
+                curl_easy_cleanup(curl);
             }
-            
+        }
+
+        // 3. Sonucu ana iş parçacığı için kuyruğa ekle
+        {
             std::lock_guard<std::mutex> lock(imageReadyMutex);
-            if (success) {
-                readyImages.push_back(targetTitleId);
+            if (surf) {
+                readyCovers.push_back({ targetTitleId, surf });
             } else {
                 coverFailedCount[targetTitleId]++;
             }
-        } else svcSleepThread(50000000ull);
+        }
+
+        // Arka plan indirimi ise SD kartı ve CPU'yu boğmamak için kısa bir bekleme yap
+        if (!isPriority) {
+            svcSleepThread(15000000ull); // 15ms
+        }
     }
 }
 
@@ -1453,6 +1647,13 @@ std::string callKeyboard() {
 
 int main(int argc, char **argv) {
     socketInitializeDefault(); curl_global_init(CURL_GLOBAL_ALL); romfsInit();
+    if (argc > 0 && argv[0] && argv[0][0] != '\0') {
+        std::string a0 = argv[0];
+        if (a0.rfind("sdmc:/", 0) == 0) g_currentNroPath = a0;
+        else if (a0[0] == '/') g_currentNroPath = "sdmc:" + a0;
+        else g_currentNroPath = "sdmc:/" + a0;
+    }
+    syncShortcutPaths();
     loadFavorites();
     loadSortMode();
     Updater::instance().init(argc > 0 ? argv[0] : nullptr);
@@ -1580,9 +1781,13 @@ int main(int argc, char **argv) {
                 updateModalShownOnce = true;
             }
         }
+        if (!appletModalShownOnce && isAppletMode && !isLoadingPatches && activeModal == MODAL_NONE) {
+            activeModal = MODAL_APPLET_WARNING;
+            appletModalShownOnce = true;
+        }
         prevUpdaterState = curUpdaterState;
 
-        bool canSelect = !(isOfflineMode && currentState == STATE_TUM_YAMALAR) && !isLoadingPatches;
+        bool canSelect = !(isOfflineMode && (currentState == STATE_TUM_YAMALAR || currentState == STATE_YENI_EKLENENLER)) && !isLoadingPatches;
 
         if (activeModal == MODAL_NONE) {
             // Touch Input
@@ -1593,9 +1798,11 @@ int main(int argc, char **argv) {
                 } else if (touchStartX > 300) {
                     targetScrollOffset = scrollStartY + ((int)touchStartY - currentTouchY);
                     if (targetScrollOffset < 0) targetScrollOffset = 0;
-                    if (currentState == STATE_HAKKINDA || currentState == STATE_AYARLAR) {
-                        float maxScroll = (currentState == STATE_HAKKINDA) ? 710 : 300;
+                    if (currentState == STATE_HAKKINDA) {
+                        float maxScroll = 620;
                         if (targetScrollOffset > maxScroll) targetScrollOffset = maxScroll;
+                    } else if (currentState == STATE_AYARLAR) {
+                        targetScrollOffset = 0;
                     } else {
                         int maxRows = (filtered_patches.size() + 3) / 4;
                         float maxScroll = (maxRows * 190) - (SCREEN_H - 45) + 150;
@@ -1608,26 +1815,8 @@ int main(int argc, char **argv) {
                 if (!touchMoved) {
                     if (Updater::instance().isUpdateAvailable() && touchStartX >= SCREEN_W - 270 && touchStartX <= SCREEN_W - 10 && touchStartY >= 8 && touchStartY <= 45) {
                         activeModal = MODAL_UPDATE_AVAILABLE;
-                    } else if (currentState == STATE_AYARLAR) {
-                        int bx = 340;
-                        int by = 50 + (int)contentOffsetY - (int)currentScrollOffset;
-                        int card1H = 95;
-                        int card2Y = by + 55 + card1H + 30;
-                        int btnY = card2Y + (Updater::instance().isUpdateAvailable() ? 115 : 85);
-                        int btnCheckW = 320;
-                        int btnCheckH = 45;
-                        if (touchStartX >= bx + 20 && touchStartX <= bx + 20 + btnCheckW && touchStartY >= btnY && touchStartY <= btnY + btnCheckH) {
-                            if (Updater::instance().isUpdateAvailable()) {
-                                activeModal = MODAL_UPDATE_AVAILABLE;
-                            } else {
-                                manualUpdateCheckRequested = true;
-                                Updater::instance().checkUpdate(true);
-                                showToast("Güncellemeler denetleniyor...");
-                            }
-                        } else if (Updater::instance().isUpdateAvailable() && touchStartX >= bx && touchStartX <= bx + 860 && touchStartY >= card2Y && touchStartY <= card2Y + 115) {
-                            activeModal = MODAL_UPDATE_AVAILABLE;
-                        }
                     } else if (touchStartX < 300) {
+                        // Sol Menü Dokunma Kontrolü - AYARLAR DAHİL TÜM SEKMELERDE ÇALIŞIR
                         int lw=1, lh=1; if (texLogo) SDL_QueryTexture(texLogo, NULL, NULL, &lw, &lh);
                         float scale = 360.0f / (lw>0?lw:1);
                         int logoBottomY = texLogo ? 30 + (int)(lh*scale) : 120;
@@ -1637,17 +1826,54 @@ int main(int argc, char **argv) {
                         if (touchStartY > searchY1 && touchStartY < searchY2) {
                             searchQuery = callKeyboard(); selectedIndex = 0; targetScrollOffset = 0; filterPatches();
                         } else {
-                            int menuStartY = logoBottomY + 80;
-                            int menuSpacing = 54;
-                            for(int m=0; m<5; m++) {
+                            int menuStartY = logoBottomY + 75;
+                            int menuSpacing = 48;
+                            for(int m=0; m<6; m++) {
                                 int my = menuStartY + m*menuSpacing;
-                                if (touchStartY >= my && touchStartY <= my+46) {
+                                if (touchStartY >= my && touchStartY <= my+44) {
                                     if (selectedMenu != m) {
                                         contentOffsetY = (m > selectedMenu) ? 150.0f : -150.0f;
                                     }
                                     selectedMenu = m; currentState = (AppState)m;
+                                    if (currentState == STATE_AYARLAR) { settingsFocusIndex = 0; currentScrollOffset = 0; }
                                     selectedIndex = 0; targetScrollOffset = 0; filterPatches();
                                 }
+                            }
+                        }
+                    } else if (currentState == STATE_AYARLAR) {
+                        int bx = 340;
+                        int by = 50 + (int)contentOffsetY;
+                        int card1H = 95;
+                        int card2Y = by + 60 + card1H + 25;
+                        int card2H = Updater::instance().isUpdateAvailable() ? 190 : 155;
+                        int btnY = card2Y + (Updater::instance().isUpdateAvailable() ? 115 : 88);
+                        int btnCheckW = 320;
+                        int btnCheckH = 45;
+
+                        int card3Y = card2Y + card2H + 25;
+                        int btnShortcutY = card3Y + 85;
+                        int btnShortcutW = 240;
+                        int btnShortcutH = 45;
+
+                        if (touchStartX >= bx + 20 && touchStartX <= bx + 20 + btnCheckW && touchStartY >= btnY && touchStartY <= btnY + btnCheckH) {
+                            settingsFocusIndex = 0;
+                            if (Updater::instance().isUpdateAvailable()) {
+                                activeModal = MODAL_UPDATE_AVAILABLE;
+                            } else {
+                                manualUpdateCheckRequested = true;
+                                Updater::instance().checkUpdate(true);
+                                showToast("Güncellemeler denetleniyor...");
+                            }
+                        } else if (Updater::instance().isUpdateAvailable() && touchStartX >= bx && touchStartX <= bx + 860 && touchStartY >= card2Y && touchStartY <= card2Y + 115) {
+                            settingsFocusIndex = 0;
+                            activeModal = MODAL_UPDATE_AVAILABLE;
+                        } else if (touchStartX >= bx + 20 && touchStartX <= bx + 20 + btnShortcutW && touchStartY >= btnShortcutY && touchStartY <= btnShortcutY + btnShortcutH) {
+                            settingsFocusIndex = 1;
+                            if (isShortcutInstalled()) {
+                                showToast("Kısayol zaten ana menüde kurulu");
+                            } else {
+                                createShortcutNsp();
+                                activeModal = MODAL_SHORTCUT_INFO;
                             }
                         }
                     } else if (currentState != STATE_HAKKINDA && currentState != STATE_AYARLAR && canSelect) {
@@ -1655,7 +1881,7 @@ int main(int argc, char **argv) {
                             sortModalSelection = (int)currentSortMode;
                             activeModal = MODAL_SORT;
                         } else {
-                            int startX = 320, startY = 40 - currentScrollOffset, itemW = 210, itemH = 120;
+                            int startX = 320, startY = 78 - currentScrollOffset, itemW = 210, itemH = 120;
                             for(int i=0; i<(int)filtered_patches.size(); i++) {
                                 int col = i % 4, r = i / 4;
                                 int ix = startX + col * (itemW + 25), iy = startY + r * (itemH + 70);
@@ -1686,7 +1912,7 @@ int main(int argc, char **argv) {
             if (kDown & HidNpadButton_Y) {
                 if (Updater::instance().isUpdateAvailable()) {
                     activeModal = MODAL_UPDATE_AVAILABLE;
-                } else {
+                } else if (currentState != STATE_HAKKINDA && currentState != STATE_AYARLAR) {
                     searchQuery = callKeyboard(); selectedIndex = 0; targetScrollOffset = 0; filterPatches();
                 }
             }
@@ -1702,34 +1928,55 @@ int main(int argc, char **argv) {
                 }
             }
 
-            if (currentState == STATE_AYARLAR && (kDown & (HidNpadButton_X | HidNpadButton_A))) {
-                if (Updater::instance().isUpdateAvailable()) {
-                    activeModal = MODAL_UPDATE_AVAILABLE;
-                } else {
-                    manualUpdateCheckRequested = true;
-                    Updater::instance().checkUpdate(true);
-                    showToast("Güncellemeler denetleniyor...");
-                }
-            }
-
             if (kDown & HidNpadButton_B) {
                 if (!searchQuery.empty()) { searchQuery = ""; filterPatches(); }
             }
             
             if (kDown & (HidNpadButton_L | HidNpadButton_ZL)) {
-                if (selectedMenu > 0) { selectedMenu--; } else { selectedMenu = 4; }
+                if (selectedMenu > 0) { selectedMenu--; } else { selectedMenu = 5; }
                 selectedIndex=0; targetScrollOffset=0; currentState=(AppState)selectedMenu;
+                if (currentState == STATE_AYARLAR) { settingsFocusIndex = 0; currentScrollOffset = 0; }
                 contentOffsetY = -150.0f;
                 filterPatches();
             }
             if (kDown & (HidNpadButton_R | HidNpadButton_ZR)) {
-                if (selectedMenu < 4) { selectedMenu++; } else { selectedMenu = 0; }
+                if (selectedMenu < 5) { selectedMenu++; } else { selectedMenu = 0; }
                 selectedIndex=0; targetScrollOffset=0; currentState=(AppState)selectedMenu;
+                if (currentState == STATE_AYARLAR) { settingsFocusIndex = 0; currentScrollOffset = 0; }
                 contentOffsetY = 150.0f;
                 filterPatches();
             }
 
-            if (currentState == STATE_HAKKINDA || currentState == STATE_AYARLAR) {
+            if (currentState == STATE_AYARLAR) {
+                targetScrollOffset = 0;
+                currentScrollOffset = 0;
+                u64 dKeysDown = kDown & (HidNpadButton_Down | HidNpadButton_Up | HidNpadButton_StickRDown | HidNpadButton_StickRUp | HidNpadButton_StickLDown | HidNpadButton_StickLUp);
+                if (dKeysDown & (HidNpadButton_Down | HidNpadButton_StickLDown | HidNpadButton_StickRDown)) {
+                    if (settingsFocusIndex < 1) settingsFocusIndex++;
+                }
+                if (dKeysDown & (HidNpadButton_Up | HidNpadButton_StickLUp | HidNpadButton_StickRUp)) {
+                    if (settingsFocusIndex > 0) settingsFocusIndex--;
+                }
+
+                if (kDown & HidNpadButton_A) {
+                    if (settingsFocusIndex == 0) {
+                        if (Updater::instance().isUpdateAvailable()) {
+                            activeModal = MODAL_UPDATE_AVAILABLE;
+                        } else {
+                            manualUpdateCheckRequested = true;
+                            Updater::instance().checkUpdate(true);
+                            showToast("Güncellemeler denetleniyor...");
+                        }
+                    } else if (settingsFocusIndex == 1) {
+                        if (isShortcutInstalled()) {
+                            showToast("Kısayol zaten ana menüde kurulu");
+                        } else {
+                            createShortcutNsp();
+                            activeModal = MODAL_SHORTCUT_INFO;
+                        }
+                    }
+                }
+            } else if (currentState == STATE_HAKKINDA) {
                 u64 dKeysDown = kDown & (HidNpadButton_Down | HidNpadButton_Up | HidNpadButton_StickRDown | HidNpadButton_StickRUp | HidNpadButton_StickLDown | HidNpadButton_StickLUp);
                 u64 dKeysHeld = kHeld & (HidNpadButton_Down | HidNpadButton_Up | HidNpadButton_StickRDown | HidNpadButton_StickRUp | HidNpadButton_StickLDown | HidNpadButton_StickLUp);
                 
@@ -1753,7 +2000,7 @@ int main(int argc, char **argv) {
                 }
                 
                 if (targetScrollOffset < 0) targetScrollOffset = 0;
-                float maxScroll = (currentState == STATE_HAKKINDA) ? 710 : 300;
+                float maxScroll = 620;
                 if (targetScrollOffset > maxScroll) targetScrollOffset = maxScroll;
             } else if (currentState != STATE_HAKKINDA && currentState != STATE_AYARLAR && canSelect) {
                 bool dpadUsed = false;
@@ -1930,6 +2177,11 @@ int main(int argc, char **argv) {
                 currentSortMode = g_sortOptions[sortModalSelection].mode;
                 saveSortMode();
                 filterPatches();
+                selectedIndex = 0;
+                targetScrollOffset = 0.0f;
+                currentScrollOffset = 0.0f;
+                selectedBoxX = 0.0f;
+                selectedBoxY = 0.0f;
                 activeModal = MODAL_NONE;
             }
             if (touchJustReleased && !touchMoved) {
@@ -1945,6 +2197,11 @@ int main(int argc, char **argv) {
                         currentSortMode = g_sortOptions[i].mode;
                         saveSortMode();
                         filterPatches();
+                        selectedIndex = 0;
+                        targetScrollOffset = 0.0f;
+                        currentScrollOffset = 0.0f;
+                        selectedBoxX = 0.0f;
+                        selectedBoxY = 0.0f;
                         activeModal = MODAL_NONE;
                         clickedOption = true;
                         break;
@@ -1955,6 +2212,52 @@ int main(int argc, char **argv) {
                         activeModal = MODAL_NONE;
                     }
                 }
+            }
+        } else if (activeModal == MODAL_SHORTCUT_INFO) {
+            std::string installer = findInstallerNroPath();
+            bool canLaunchInstaller = !isShortcutInstalled() && !installer.empty();
+
+            if (canLaunchInstaller && (kDown & HidNpadButton_X)) {
+                pendingLaunchNro = installer;
+                appRunning = false;
+            } else if (kDown & (HidNpadButton_A | HidNpadButton_B | HidNpadButton_Y)) {
+                activeModal = MODAL_NONE;
+            }
+
+            if (touchJustReleased && !touchMoved) {
+                int bx = 280, by = 150, bw = 720, bh = 420;
+                int centerX = bx + bw / 2;
+                int btnH = 46;
+                int btnY = by + bh - 65;
+                if (canLaunchInstaller) {
+                    int btnW1 = 280;
+                    int btnX1 = centerX - btnW1 - 10;
+                    int btnW2 = 180;
+                    int btnX2 = centerX + 10;
+                    if (touchStartX >= btnX1 && touchStartX <= btnX1 + btnW1 && touchStartY >= btnY && touchStartY <= btnY + btnH) {
+                        pendingLaunchNro = installer;
+                        appRunning = false;
+                    } else if (touchStartX >= btnX2 && touchStartX <= btnX2 + btnW2 && touchStartY >= btnY && touchStartY <= btnY + btnH) {
+                        activeModal = MODAL_NONE;
+                    } else if (touchStartX < bx || touchStartX > bx + bw || touchStartY < by || touchStartY > by + bh) {
+                        activeModal = MODAL_NONE;
+                    }
+                } else {
+                    int btnW = 200;
+                    int btnX = centerX - btnW / 2;
+                    if (touchStartX >= btnX && touchStartX <= btnX + btnW && touchStartY >= btnY && touchStartY <= btnY + btnH) {
+                        activeModal = MODAL_NONE;
+                    } else if (touchStartX < bx || touchStartX > bx + bw || touchStartY < by || touchStartY > by + bh) {
+                        activeModal = MODAL_NONE;
+                    }
+                }
+            }
+        } else if (activeModal == MODAL_APPLET_WARNING) {
+            if (kDown & (HidNpadButton_A | HidNpadButton_B | HidNpadButton_X | HidNpadButton_Y | HidNpadButton_Plus | HidNpadButton_Minus)) {
+                activeModal = MODAL_NONE;
+            }
+            if (touchJustReleased && !touchMoved) {
+                activeModal = MODAL_NONE;
             }
         }
 
@@ -1979,28 +2282,34 @@ int main(int argc, char **argv) {
         int sCol = selectedIndex % 4;
         int sRow = selectedIndex / 4;
         float sTargetX = 330 + sCol * (210 + 25);
-        float sTargetY = 40 + contentOffsetY + sRow * (120 + 70);
+        float sTargetY = 78 + contentOffsetY + sRow * (120 + 70);
         
         if (selectedBoxX == 0.0f) { selectedBoxX = sTargetX; selectedBoxY = sTargetY; }
         selectedBoxX += (sTargetX - selectedBoxX) * 0.45f;
         selectedBoxY += (sTargetY - selectedBoxY) * 0.45f;
 
-        // Load Textures from thread (Saniyede max 120 kapak yükleyerek donmayı engelle)
+        // Hazırlanan yüzeyleri (SDL_Surface) ana iş parçacığında anında GPU dokusuna dönüştür (~20 mikrosaniye)
         {
-            std::lock_guard<std::mutex> lock(imageReadyMutex);
-            int loadedCount = 0;
-            while (!readyImages.empty() && loadedCount < 2) {
-                std::string tid = readyImages.back();
-                readyImages.pop_back();
-                loadedCount++;
-                
-                std::string p = "sdmc:/YamaNX_Covers/" + tid + ".jpg";
-                SDL_Texture* tex = IMG_LoadTexture(renderer, p.c_str());
-                if (tex) {
-                    if (coverTextures.find(tid) != coverTextures.end()) {
-                        SDL_DestroyTexture(coverTextures[tid]);
+            std::vector<ReadyCover> toUpload;
+            {
+                std::lock_guard<std::mutex> lock(imageReadyMutex);
+                int count = 0;
+                while (!readyCovers.empty() && count < 3) {
+                    toUpload.push_back(readyCovers.back());
+                    readyCovers.pop_back();
+                    count++;
+                }
+            }
+            for (auto& item : toUpload) {
+                if (item.surf) {
+                    SDL_Texture* tex = SDL_CreateTextureFromSurface(renderer, item.surf);
+                    SDL_FreeSurface(item.surf);
+                    if (tex) {
+                        if (coverTextures.find(item.tid) != coverTextures.end()) {
+                            SDL_DestroyTexture(coverTextures[item.tid]);
+                        }
+                        coverTextures[item.tid] = tex;
                     }
-                    coverTextures[tid] = tex;
                 }
             }
         }
@@ -2062,26 +2371,83 @@ int main(int argc, char **argv) {
         else drawText(searchQuery.c_str(), 20, logoBottomY + 35, colorWhite, fontSmall);
 
         // Menüler - Smooth Transition
-        int menuStartY = logoBottomY + 80;
-        int menuSpacing = 54;
+        int menuStartY = logoBottomY + 75;
+        int menuSpacing = 48;
         float targetMenuY = menuStartY + selectedMenu * menuSpacing;
         if (currentMenuY < 0) currentMenuY = targetMenuY;
         currentMenuY += (targetMenuY - currentMenuY) * 0.15f;
         
-        roundedBoxRGBA(renderer, 10, (int)currentMenuY, 290, (int)currentMenuY + 46, 10, 50, 49, 80, 255);
-        roundedRectangleRGBA(renderer, 10, (int)currentMenuY, 290, (int)currentMenuY + 46, 10, 80, 150, 255, 255);
+        roundedBoxRGBA(renderer, 10, (int)currentMenuY, 290, (int)currentMenuY + 42, 8, 50, 49, 80, 255);
+        roundedRectangleRGBA(renderer, 10, (int)currentMenuY, 290, (int)currentMenuY + 42, 8, 80, 150, 255, 255);
 
-        drawText("Tüm Yamalar", 30, menuStartY + 0 * menuSpacing + 11, selectedMenu==0 ? colorWhite : colorGray, fontMid);
-        drawText("Yüklü İçerikler", 30, menuStartY + 1 * menuSpacing + 11, selectedMenu==1 ? colorWhite : colorGray, fontMid);
-        drawText("Favoriler", 30, menuStartY + 2 * menuSpacing + 11, selectedMenu==2 ? colorWhite : colorGray, fontMid);
-        if (!g_favorites.empty()) {
-            drawText("★", 160, menuStartY + 2 * menuSpacing + 11, {241, 196, 15, 255}, fontSmall);
+        // Menü İkonları ve Metinleri
+        for (int m = 0; m < 6; m++) {
+            int itemY = menuStartY + m * menuSpacing;
+            int ix = 32;
+            int iy = itemY + 21;
+            SDL_Color col = (selectedMenu == m) ? colorWhite : colorGray;
+
+            if (m == 0) {
+                // Tüm Yamalar: 2x2 Izgara / Katalog İkonu
+                roundedBoxRGBA(renderer, ix - 7, iy - 7, ix - 2, iy - 2, 2, col.r, col.g, col.b, 255);
+                roundedBoxRGBA(renderer, ix + 2, iy - 7, ix + 7, iy - 2, 2, col.r, col.g, col.b, 255);
+                roundedBoxRGBA(renderer, ix - 7, iy + 2, ix - 2, iy + 7, 2, col.r, col.g, col.b, 255);
+                roundedBoxRGBA(renderer, ix + 2, iy + 2, ix + 7, iy + 7, 2, col.r, col.g, col.b, 255);
+            } else if (m == 1) {
+                // Yeni Eklenenler: Temiz + (Artı) İkonu
+                thickLineRGBA(renderer, ix, iy - 6, ix, iy + 6, 2, col.r, col.g, col.b, 255);
+                thickLineRGBA(renderer, ix - 6, iy, ix + 6, iy, 2, col.r, col.g, col.b, 255);
+            } else if (m == 2) {
+                // Yüklü Oyunlar: İndirme Oku ve Tepsi İkonu
+                thickLineRGBA(renderer, ix, iy - 7, ix, iy + 1, 2, col.r, col.g, col.b, 255);
+                thickLineRGBA(renderer, ix - 4, iy - 2, ix, iy + 2, 2, col.r, col.g, col.b, 255);
+                thickLineRGBA(renderer, ix + 4, iy - 2, ix, iy + 2, 2, col.r, col.g, col.b, 255);
+                thickLineRGBA(renderer, ix - 7, iy + 6, ix + 7, iy + 6, 2, col.r, col.g, col.b, 255);
+                lineRGBA(renderer, ix - 7, iy + 3, ix - 7, iy + 6, col.r, col.g, col.b, 255);
+                lineRGBA(renderer, ix + 7, iy + 3, ix + 7, iy + 6, col.r, col.g, col.b, 255);
+            } else if (m == 3) {
+                // Favoriler: Geometrik Kalp İkonu
+                SDL_Color favCol = (selectedMenu == 3) ? SDL_Color{241, 196, 15, 255} : col;
+                filledCircleRGBA(renderer, ix - 3, iy - 2, 4, favCol.r, favCol.g, favCol.b, 255);
+                filledCircleRGBA(renderer, ix + 3, iy - 2, 4, favCol.r, favCol.g, favCol.b, 255);
+                Sint16 hx[3] = { (Sint16)(ix - 7), (Sint16)(ix + 7), (Sint16)ix };
+                Sint16 hy[3] = { (Sint16)(iy - 1), (Sint16)(iy - 1), (Sint16)(iy + 8) };
+                filledPolygonRGBA(renderer, hx, hy, 3, favCol.r, favCol.g, favCol.b, 255);
+            } else if (m == 4) {
+                // Hakkında: Bilgi "i" Dairesi İkonu
+                circleRGBA(renderer, ix, iy, 7, col.r, col.g, col.b, 255);
+                filledCircleRGBA(renderer, ix, iy - 3, 1, col.r, col.g, col.b, 255);
+                thickLineRGBA(renderer, ix, iy - 1, ix, iy + 4, 2, col.r, col.g, col.b, 255);
+            } else if (m == 5) {
+                // Ayarlar: Ayar Kaydırıcıları (Sliders) İkonu
+                thickLineRGBA(renderer, ix - 7, iy - 5, ix + 7, iy - 5, 2, col.r, col.g, col.b, 255);
+                filledCircleRGBA(renderer, ix - 2, iy - 5, 2, col.r, col.g, col.b, 255);
+                thickLineRGBA(renderer, ix - 7, iy, ix + 7, iy, 2, col.r, col.g, col.b, 255);
+                filledCircleRGBA(renderer, ix + 3, iy, 2, col.r, col.g, col.b, 255);
+                thickLineRGBA(renderer, ix - 7, iy + 5, ix + 7, iy + 5, 2, col.r, col.g, col.b, 255);
+                filledCircleRGBA(renderer, ix - 3, iy + 5, 2, col.r, col.g, col.b, 255);
+            }
         }
-        drawText("Hakkında", 30, menuStartY + 3 * menuSpacing + 11, selectedMenu==3 ? colorWhite : colorGray, fontMid);
-        drawText("Ayarlar", 30, menuStartY + 4 * menuSpacing + 11, selectedMenu==4 ? colorWhite : colorGray, fontMid);
+
+        drawText("Tüm Yamalar", 54, menuStartY + 0 * menuSpacing + 9, selectedMenu==0 ? colorWhite : colorGray, fontMid);
+        drawText("Yeni Eklenenler", 54, menuStartY + 1 * menuSpacing + 9, selectedMenu==1 ? colorWhite : colorGray, fontMid);
+        drawText("Yüklü Oyunlar", 54, menuStartY + 2 * menuSpacing + 9, selectedMenu==2 ? colorWhite : colorGray, fontMid);
+        drawText("Favoriler", 54, menuStartY + 3 * menuSpacing + 9, selectedMenu==3 ? colorWhite : colorGray, fontMid);
+        if (!g_favorites.empty()) {
+            char fcStr[16];
+            snprintf(fcStr, sizeof(fcStr), "%d", (int)g_favorites.size());
+            int fcw = 0, fch = 0;
+            TTF_SizeUTF8(fontSmall, fcStr, &fcw, &fch);
+            int pillW = fcw + 14, pillH = 20;
+            int pillX = 155, pillY = menuStartY + 3 * menuSpacing + 11;
+            roundedBoxRGBA(renderer, pillX, pillY, pillX + pillW, pillY + pillH, 6, 241, 196, 15, 220);
+            drawTextCentered(fcStr, pillX + pillW / 2, pillY + 2, {20, 20, 20, 255}, fontSmall);
+        }
+        drawText("Hakkında", 54, menuStartY + 4 * menuSpacing + 9, selectedMenu==4 ? colorWhite : colorGray, fontMid);
+        drawText("Ayarlar", 54, menuStartY + 5 * menuSpacing + 9, selectedMenu==5 ? colorWhite : colorGray, fontMid);
 
         if (Updater::instance().isUpdateAvailable()) {
-            filledCircleRGBA(renderer, 150, menuStartY + 4 * menuSpacing + 23, 5, 46, 204, 113, 255);
+            filledCircleRGBA(renderer, 145, menuStartY + 5 * menuSpacing + 21, 5, 46, 204, 113, 255);
         }
 
         // Applet / Offline Warning
@@ -2105,55 +2471,167 @@ int main(int argc, char **argv) {
         // Content
         if (currentState == STATE_HAKKINDA) {
             int bx = 330;
-            int by = 40 + (int)contentOffsetY - (int)currentScrollOffset;
+            int boxW = 860;
+            int boxH = 46;
+            int bannerY = 16 + (int)contentOffsetY - (int)currentScrollOffset;
+
+            if (bannerY > -50 && bannerY < SCREEN_H) {
+                roundedBoxRGBA(renderer, bx, bannerY, bx + boxW, bannerY + boxH, 10, 32, 31, 48, 255);
+                roundedRectangleRGBA(renderer, bx, bannerY, bx + boxW, bannerY + boxH, 10, 75, 70, 110, 255);
+
+                int nbw = 56, nbh = 24;
+                int nbx = bx + 16, nby = bannerY + 11;
+                roundedBoxRGBA(renderer, nbx, nby, nbx + nbw, nby + nbh, 6, 41, 128, 185, 255);
+                drawTextCentered("BİLGİ", nbx + nbw / 2, nby + 4, colorWhite, fontSmall);
+
+                drawText("Hakkında & İletişim", nbx + nbw + 14, bannerY + 11, colorWhite, fontMid);
+            }
+
+            int by = 78 + (int)contentOffsetY - (int)currentScrollOffset;
             
             const char* aboutText1 = 
-            "Merhaba, ben SertAy.\n\n"
+            "Merhaba, ben SertAy.\n"
             "Hiçbir yazılım tecrübem olmadan, tamamen yapay zeka desteği ve büyük bir emekle geliştirdiğim YamaNX'in hatalarını çözerek sorunsuz bir sürüme ulaştırdım. Hata bildirimleri ve önerileriniz için bana her zaman ulaşabilirsiniz.\n\n"
-            "Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücretsiz yaması ve 200'den fazla Soner Çakır, Sinnerclown, Profesör Pikachu, Dede00, emre, davetsiz57 gibi pek çok çevirmen arkadaşın internetten bulduğum yamaları yer alıyor. Tespit edebildiğim tüm isimleri oyun seçim ekranına ekledim.\n\n"
-            "Sürekli güncellenen arşivimize eksik yamaların eklenmesi için bana, sıfırdan çeviri istekleriniz için ise doğrudan yapımcılara yazabilirsiniz.\n\n"
-            "Uygulamanın gelişimine destek olmak ve beni motive etmek isterseniz bağış yapabilirsiniz.";
+            "Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücretsiz yaması ve Soner Çakır, Profesör Pikachu, Dede00, emre, davetsiz57 gibi pek çok çevirmen arkadaşın internetten bulduğum yamaları yer alıyor. Tespit edebildiğim tüm isimleri oyun seçim ekranına ekledim.\n\n"
+            "Sürekli güncellenen arşivimize eksik yamaların eklenmesi için bana, sıfırdan çeviri istekleriniz için ise doğrudan yapımcılara yazabilirsiniz. Beni desteklemek için sosyal medya hesaplarımdan takip edebilirsiniz. İyi Oyunlar!";
             
             std::string wrappedAbout = wrapText(aboutText1, 90);
             int textBottomY = drawText(wrappedAbout.c_str(), bx, by, colorWhite, fontSmall);
             
-            int currentY = textBottomY + 50;
+            int currentY = textBottomY + 22;
 
-            // --- 1. SertAy Tüm Linkler ---
-            drawTextCentered("SertAy Tüm Linkler", bx + 435, currentY, colorWhite, fontMid);
-            currentY += 40;
+            // --- 1. SertAy Vurgulu Özel Kart (QR + Sosyal Medya Rozetleri) ---
+            int cardX = bx;
+            int cardW = boxW;
+            int cardH = 305;
+            int cardY = currentY;
+            int centerX = cardX + cardW / 2;
+
+            // Arka Plan ve Parlayan Çerçeve Efekti (Mor / Neon Violet)
+            roundedBoxRGBA(renderer, cardX - 2, cardY - 2, cardX + cardW + 2, cardY + cardH + 2, 14, 108, 92, 231, 60);
+            roundedRectangleRGBA(renderer, cardX, cardY, cardX + cardW, cardY + cardH, 12, 130, 110, 245, 255);
+            roundedBoxRGBA(renderer, cardX, cardY, cardX + cardW, cardY + cardH, 12, 26, 24, 40, 255);
+            roundedBoxRGBA(renderer, cardX + 1, cardY + 1, cardX + cardW - 1, cardY + 44, 11, 38, 34, 58, 255);
+            boxRGBA(renderer, cardX + 1, cardY + 34, cardX + cardW - 1, cardY + 44, 38, 34, 58, 255);
+
+            // Başlık: SertAy Tüm Linkler (Standart yükseklikteki başlık kutucuğunda)
+            drawTextCentered("SertAy Tüm Linkler", centerX, cardY + 12, colorWhite, fontMid);
+
+            // Koyu mor kısımda QR'ın hemen üstünde: [ KAMERAYLA OKUT ] Rozeti
+            const char* kText = "KAMERAYLA OKUT";
+            int ktw = 0, kth = 0;
+            TTF_SizeUTF8(fontSmall, kText, &ktw, &kth);
+            int pillW = ktw + 28;
+            int pillH = kth + 8;
+            int pillX = centerX - pillW / 2;
+            int pillY = cardY + 54;
+            roundedBoxRGBA(renderer, pillX, pillY, pillX + pillW, pillY + pillH, 6, 108, 92, 231, 255);
+            drawTextCentered(kText, centerX, pillY + 4, colorWhite, fontSmall);
+
+            // Merkez QR Kod (Koyu mor kısımda, rozetin altında)
+            int qrSize = 150;
+            int qrX = centerX - qrSize / 2;
+            int qrY = cardY + 86;
+            roundedBoxRGBA(renderer, qrX - 6, qrY - 6, qrX + qrSize + 6, qrY + qrSize + 6, 8, 255, 255, 255, 255);
             if (texQR_SertAyTumLinkler) {
-                SDL_Rect rect = {bx + 435 - 90, currentY, 180, 180};
+                SDL_Rect rect = {qrX, qrY, qrSize, qrSize};
                 SDL_RenderCopy(renderer, texQR_SertAyTumLinkler, NULL, &rect);
             }
-            currentY += 260; // Push Swatalk below the screen initially
-            
-            lineRGBA(renderer, bx - 10, currentY, bx + 870, currentY, 100, 100, 100, 255);
-            currentY += 50;
 
-            // --- 2. Swatalk Discord ---
-            drawTextCentered("Swatalk Discord", bx + 435, currentY, colorWhite, fontMid);
-            currentY += 40;
+            // Düzenli ve Simetrik Sosyal Medya Kutucukları
+            // Sol Taraf: Instagram ve YouTube (Tam hizalı, eşit genişlik ve eşit sol başlangıç)
+            int bLeftW = 180, bLeftH = 38;
+            int bLeftX = qrX - bLeftW - 30;
+
+            // 1) Instagram (cilsertay) - Sol Üst
+            int b1_y = qrY + 18;
+            roundedBoxRGBA(renderer, bLeftX, b1_y, bLeftX + bLeftW, b1_y + bLeftH, 8, 38, 18, 30, 255);
+            roundedRectangleRGBA(renderer, bLeftX, b1_y, bLeftX + bLeftW, b1_y + bLeftH, 8, 225, 48, 108, 255);
+            {
+                int icX = bLeftX + 14, icY = b1_y + 11;
+                roundedRectangleRGBA(renderer, icX, icY, icX + 16, icY + 16, 4, 225, 48, 108, 255);
+                circleRGBA(renderer, icX + 8, icY + 8, 3, 225, 48, 108, 255);
+                pixelRGBA(renderer, icX + 13, icY + 3, 225, 48, 108, 255);
+                pixelRGBA(renderer, icX + 13, icY + 4, 225, 48, 108, 255);
+                drawText("cilsertay", icX + 26, b1_y + 9, colorWhite, fontSmall);
+            }
+
+            // 2) YouTube (SertAy) - Sol Alt
+            int b2_y = qrY + 92;
+            roundedBoxRGBA(renderer, bLeftX, b2_y, bLeftX + bLeftW, b2_y + bLeftH, 8, 38, 16, 16, 255);
+            roundedRectangleRGBA(renderer, bLeftX, b2_y, bLeftX + bLeftW, b2_y + bLeftH, 8, 255, 55, 55, 255);
+            {
+                int icX = bLeftX + 14, icY = b2_y + 12;
+                roundedBoxRGBA(renderer, icX, icY, icX + 18, icY + 14, 4, 255, 0, 0, 255);
+                filledTrigonRGBA(renderer, icX + 7, icY + 4, icX + 7, icY + 10, icX + 13, icY + 7, 255, 255, 255, 255);
+                drawText("SertAy", icX + 28, b2_y + 9, colorWhite, fontSmall);
+            }
+
+            // Sağ Taraf: TikTok (sertayintardis) - QR Kodun dikey merkezine tam hizalı
+            int bRightW = 195, bRightH = 42;
+            int bRightX = qrX + qrSize + 30;
+            int b3_y = qrY + (qrSize - bRightH) / 2;
+            roundedBoxRGBA(renderer, bRightX, b3_y, bRightX + bRightW, b3_y + bRightH, 8, 16, 26, 32, 255);
+            roundedRectangleRGBA(renderer, bRightX, b3_y, bRightX + bRightW, b3_y + bRightH, 8, 0, 242, 234, 255);
+            {
+                int icX = bRightX + 14, icY = b3_y + 12;
+                thickLineRGBA(renderer, icX + 10, icY + 1, icX + 10, icY + 13, 2, 0, 242, 234, 255);
+                lineRGBA(renderer, icX + 10, icY + 1, icX + 15, icY + 4, 254, 44, 85, 255);
+                lineRGBA(renderer, icX + 10, icY + 2, icX + 15, icY + 5, 0, 242, 234, 255);
+                filledCircleRGBA(renderer, icX + 7, icY + 13, 4, 0, 242, 234, 255);
+                filledCircleRGBA(renderer, icX + 6, icY + 12, 2, 254, 44, 85, 255);
+                drawText("sertayintardis", icX + 26, b3_y + 11, colorWhite, fontSmall);
+            }
+
+            // Kart İçi Alt Bilgi (Yeni Eylem Çağrısı)
+            drawTextCentered("Desteklemek ve güncellemelerden haberdar olmak için BENİ TAKİP EDİN!", centerX, cardY + cardH - 28, {225, 225, 245, 255}, fontSmall);
+
+            currentY = cardY + cardH + 28;
+
+            // --- 2. Swatalk Discord Vurgulu Özel Kart (Discord Blurple Teması) ---
+            int card2_H = 228;
+            roundedBoxRGBA(renderer, cardX - 2, currentY - 2, cardX + cardW + 2, currentY + card2_H + 2, 14, 88, 101, 242, 50);
+            roundedRectangleRGBA(renderer, cardX, currentY, cardX + cardW, currentY + card2_H, 12, 88, 101, 242, 255);
+            roundedBoxRGBA(renderer, cardX, currentY, cardX + cardW, currentY + card2_H, 12, 22, 24, 38, 255);
+            roundedBoxRGBA(renderer, cardX + 1, currentY + 1, cardX + cardW - 1, currentY + 44, 11, 30, 34, 56, 255);
+            boxRGBA(renderer, cardX + 1, currentY + 34, cardX + cardW - 1, currentY + 44, 30, 34, 56, 255);
+
+            drawTextCentered("Swatalk Discord", centerX, currentY + 12, colorWhite, fontMid);
             
             if (texQR_SwatalkDiscord) {
-                SDL_Rect rect1 = {bx + 435 - 90, currentY, 180, 180};
+                int qW = 150;
+                int qX = centerX - qW / 2;
+                int qY = currentY + 58;
+                roundedBoxRGBA(renderer, qX - 6, qY - 6, qX + qW + 6, qY + qW + 6, 8, 255, 255, 255, 255);
+                SDL_Rect rect1 = {qX, qY, qW, qW};
                 SDL_RenderCopy(renderer, texQR_SwatalkDiscord, NULL, &rect1);
             }
-            currentY += 220;
 
-            lineRGBA(renderer, bx - 10, currentY, bx + 870, currentY, 100, 100, 100, 255);
-            currentY += 50;
+            currentY += card2_H + 28;
 
-            // --- 3. Soner Çakır Discord ---
-            drawTextCentered("Soner Çakır Discord", bx + 435, currentY, colorWhite, fontMid);
-            currentY += 40;
+            // --- 3. Soner Çakır Discord Vurgulu Özel Kart (Zümrüt Yeşili Teması) ---
+            int card3_H = 228;
+            roundedBoxRGBA(renderer, cardX - 2, currentY - 2, cardX + cardW + 2, currentY + card3_H + 2, 14, 46, 204, 113, 50);
+            roundedRectangleRGBA(renderer, cardX, currentY, cardX + cardW, currentY + card3_H, 12, 46, 204, 113, 255);
+            roundedBoxRGBA(renderer, cardX, currentY, cardX + cardW, currentY + card3_H, 12, 20, 32, 26, 255);
+            roundedBoxRGBA(renderer, cardX + 1, currentY + 1, cardX + cardW - 1, currentY + 44, 11, 26, 46, 36, 255);
+            boxRGBA(renderer, cardX + 1, currentY + 34, cardX + cardW - 1, currentY + 44, 26, 46, 36, 255);
+
+            drawTextCentered("Soner Çakır Discord", centerX, currentY + 12, colorWhite, fontMid);
+
             if (texQR_SonerCakirDiscord) {
-                SDL_Rect rect = {bx + 435 - 90, currentY, 180, 180};
+                int qW = 150;
+                int qX = centerX - qW / 2;
+                int qY = currentY + 58;
+                roundedBoxRGBA(renderer, qX - 6, qY - 6, qX + qW + 6, qY + qW + 6, 8, 255, 255, 255, 255);
+                SDL_Rect rect = {qX, qY, qW, qW};
                 SDL_RenderCopy(renderer, texQR_SonerCakirDiscord, NULL, &rect);
             }
-            currentY += 220;
+
+            currentY += card3_H + 35;
+
             // --- Scrollbar ---
-            float maxScroll = 710.0f;
+            float maxScroll = 620.0f;
             int viewPortHeight = SCREEN_H - 45;
             int totalListHeight = maxScroll + viewPortHeight;
             if (totalListHeight > viewPortHeight) {
@@ -2175,7 +2653,7 @@ int main(int argc, char **argv) {
             }
         } else if (currentState == STATE_AYARLAR) {
             int bx = 340;
-            int by = 50 + (int)contentOffsetY - (int)currentScrollOffset;
+            int by = 50 + (int)contentOffsetY;
 
             // Başlık
             drawText("Ayarlar", bx, by, colorWhite, fontBig);
@@ -2204,23 +2682,67 @@ int main(int argc, char **argv) {
                 ReleaseInfo rInfo = Updater::instance().releaseInfo();
                 std::string updMsg = "Yeni Sürüm Mevcut: " + rInfo.tagName;
                 drawText(updMsg.c_str(), bx + 20, by + 52, {46, 204, 113, 255}, fontMid);
-                drawText("Güncellemek için butona veya (Y) tuşuna basın.", bx + 20, by + 82, colorGray, fontSmall);
+                drawText("Güncellemek için butona basın.", bx + 20, by + 82, colorGray, fontSmall);
                 btnY = by + 115;
             } else {
-                drawText("Uygulamanızın en güncel sürümünü kontrol etmek için aşağıdaki butona basın.", bx + 20, by + 52, colorGray, fontSmall);
+                drawText("Uygulamanızın en güncel sürümünü kontrol etmek için butona basın.", bx + 20, by + 52, colorGray, fontSmall);
                 btnY = by + 88;
             }
 
             int btnCheckW = 320;
             int btnCheckH = 45;
+
+            // Odaklama Çerçevesi: Buton 0 (Güncellemeleri Denetle)
+            if (settingsFocusIndex == 0) {
+                for (int dx = -2; dx <= 2; dx++) {
+                    for (int dy = -2; dy <= 2; dy++) {
+                        roundedRectangleRGBA(renderer, bx + 18 + dx, btnY - 2 + dy, bx + 22 + btnCheckW + dx, btnY + btnCheckH + 2 + dy, 10, 80, 150, 255, 255);
+                    }
+                }
+            }
+
             if (Updater::instance().isUpdateAvailable()) {
                 roundedBoxRGBA(renderer, bx + 20, btnY, bx + 20 + btnCheckW, btnY + btnCheckH, 8, 46, 204, 113, 255);
-                drawTextCentered("ŞİMDİ GÜNCELLE (Y)", bx + 20 + btnCheckW / 2, btnY + 12, colorWhite, fontMid);
+                drawTextCentered("Şimdi Güncelle", bx + 20 + btnCheckW / 2, btnY + 12, colorWhite, fontMid);
             } else {
                 roundedBoxRGBA(renderer, bx + 20, btnY, bx + 20 + btnCheckW, btnY + btnCheckH, 8, 41, 128, 185, 255);
-                drawTextCentered("Güncellemeleri Denetle (X)", bx + 20 + btnCheckW / 2, btnY + 12, colorWhite, fontMid);
+                drawTextCentered("Güncellemeleri Denetle", bx + 20 + btnCheckW / 2, btnY + 12, colorWhite, fontMid);
             }
-        } else if (currentState == STATE_TUM_YAMALAR && isOfflineMode) {
+
+            by += card2H + 25;
+
+            // --- KART 3: Ana Menü Kısayolu (NSP Forwarder) ---
+            int card3H = 145;
+            roundedBoxRGBA(renderer, bx, by, bx + cardW, by + card3H, 10, 33, 32, 46, 255);
+            roundedRectangleRGBA(renderer, bx, by, bx + cardW, by + card3H, 10, 50, 49, 70, 255);
+
+            drawText("Ana Menü Kısayolu (NSP Forwarder)", bx + 20, by + 18, colorWhite, fontMid);
+            drawText("Ana menüye kısayol ekleyerek applet modsuz doğrudan başlatabilirsiniz.", bx + 20, by + 50, colorGray, fontSmall);
+
+            bool isInst = isShortcutInstalled();
+            int btnShortcutW = 240;
+            int btnShortcutH = 45;
+            int btnShortcutY = by + 85;
+
+            // Odaklama Çerçevesi: Buton 1 (Kısayol)
+            if (settingsFocusIndex == 1) {
+                for (int dx = -2; dx <= 2; dx++) {
+                    for (int dy = -2; dy <= 2; dy++) {
+                        roundedRectangleRGBA(renderer, bx + 18 + dx, btnShortcutY - 2 + dy, bx + 22 + btnShortcutW + dx, btnShortcutY + btnShortcutH + 2 + dy, 10, 80, 150, 255, 255);
+                    }
+                }
+            }
+
+            if (isInst) {
+                // Kurulu ve basılamaz (Disabled)
+                roundedBoxRGBA(renderer, bx + 20, btnShortcutY, bx + 20 + btnShortcutW, btnShortcutY + btnShortcutH, 8, 50, 50, 65, 255);
+                roundedRectangleRGBA(renderer, bx + 20, btnShortcutY, bx + 20 + btnShortcutW, btnShortcutY + btnShortcutH, 8, 70, 70, 90, 255);
+                drawTextCentered("Kısayol Kurulu", bx + 20 + btnShortcutW / 2, btnShortcutY + 12, {150, 150, 165, 255}, fontMid);
+            } else {
+                roundedBoxRGBA(renderer, bx + 20, btnShortcutY, bx + 20 + btnShortcutW, btnShortcutY + btnShortcutH, 8, 108, 92, 231, 255);
+                drawTextCentered("Kısayol Oluştur", bx + 20 + btnShortcutW / 2, btnShortcutY + 12, colorWhite, fontMid);
+            }
+        } else if ((currentState == STATE_TUM_YAMALAR || currentState == STATE_YENI_EKLENENLER) && isOfflineMode) {
             const char* offlineMsg1 = "İnternet bağlantınızı kontrol edin";
             const char* offlineMsg2 = "ve uygulamayı tekrar başlatın.";
             
@@ -2229,6 +2751,10 @@ int main(int argc, char **argv) {
             
             drawText(offlineMsg1, 300 + (980 - w1)/2, 300 + (int)contentOffsetY, colorWhite, fontBig);
             drawText(offlineMsg2, 300 + (980 - w2)/2, 350 + (int)contentOffsetY, colorWhite, fontBig);
+        } else if (currentState == STATE_YENI_EKLENENLER && filtered_patches.empty() && !isLoadingPatches) {
+            const char* newMsg1 = "Yeni eklenen yama bulunamadı.";
+            int w1=0, h1=0; TTF_SizeUTF8(fontMid, newMsg1, &w1, &h1);
+            drawText(newMsg1, 300 + (980 - w1)/2, 300 + (int)contentOffsetY, colorWhite, fontMid);
         } else if (currentState == STATE_FAVORILER && filtered_patches.empty() && !isLoadingPatches) {
             const char* favMsg1 = "Henüz favorilere eklenmiş bir yama yok.";
             const char* favMsg2 = "Bir yamayı seçip (X) tuşuna basarak favorilere ekleyebilirsiniz.";
@@ -2241,37 +2767,83 @@ int main(int argc, char **argv) {
         } else if (isLoadingPatches) {
             // Render nothing, just stay empty until patches load
         } else {
-            int startX = 330, startY = 40 - currentScrollOffset + (int)contentOffsetY;
+            int startX = 330, startY = 78 - currentScrollOffset + (int)contentOffsetY;
             int itemW = 210, itemH = 120, paddingX = 25, paddingY = 70;
+
+            int boxX = startX;
+            int boxW = 4 * itemW + 3 * paddingX; // 4 * 210 + 3 * 25 = 915px (ızgara genişliğiyle tam hizalı)
+            int boxH = 46;
+            int bannerY = 16 - currentScrollOffset + (int)contentOffsetY;
+
+            if (bannerY > -50 && bannerY < SCREEN_H) {
+                // Kutucuk Arkaplanı ve Çerçevesi
+                roundedBoxRGBA(renderer, boxX, bannerY, boxX + boxW, bannerY + boxH, 10, 32, 31, 48, 255);
+                roundedRectangleRGBA(renderer, boxX, bannerY, boxX + boxW, bannerY + boxH, 10, 75, 70, 110, 255);
+
+                const char* badgeText = "";
+                const char* titleText = "";
+                SDL_Color badgeColor = { 0, 150, 230, 255 }; // Varsayılan mavi
+
+                if (currentState == STATE_YENI_EKLENENLER) {
+                    badgeText = "YENİ";
+                    titleText = "Arşive Eklenen Son 15 Yama";
+                    badgeColor = { 0, 150, 230, 255 }; // Mavi
+                } else if (currentState == STATE_TUM_YAMALAR) {
+                    badgeText = "TÜMÜ";
+                    titleText = "Tüm Türkçe Yamalar";
+                    badgeColor = { 108, 92, 231, 255 }; // Mor
+                } else if (currentState == STATE_YUKLU_YAMALAR) {
+                    badgeText = "YÜKLÜ";
+                    titleText = "Yüklü Oyunlar";
+                    badgeColor = { 30, 140, 70, 255 }; // Yeşil
+                } else if (currentState == STATE_FAVORILER) {
+                    badgeText = "FAVORİ";
+                    titleText = "Favori Yamalar";
+                    badgeColor = { 241, 196, 15, 255 }; // Altın sarısı
+                }
+
+                if (strlen(badgeText) > 0) {
+                    int tw = 0, th = 0;
+                    TTF_SizeUTF8(fontSmall, badgeText, &tw, &th);
+                    int nbw = tw + 18, nbh = 24;
+                    int nbx = boxX + 16, nby = bannerY + 11;
+                    roundedBoxRGBA(renderer, nbx, nby, nbx + nbw, nby + nbh, 6, badgeColor.r, badgeColor.g, badgeColor.b, 255);
+                    SDL_Color textColor = (currentState == STATE_FAVORILER) ? SDL_Color{20, 20, 20, 255} : colorWhite;
+                    drawTextCentered(badgeText, nbx + nbw / 2, nby + 4, textColor, fontSmall);
+
+                    drawText(titleText, nbx + nbw + 14, bannerY + 11, colorWhite, fontMid);
+                }
+            }
 
             // PASS 1: Covers
             for (int i = 0; i < (int)filtered_patches.size(); ++i) {
                 int col = i % 4, r = i / 4;
                 int x = startX + col * (itemW + paddingX), y = startY + r * (itemH + paddingY);
 
-                if (y > -itemH - 50 && y < SCREEN_H) {
+                if (y > -itemH - 150 && y < SCREEN_H + 150) {
                     std::string tid = filtered_patches[i].title_id;
                     bool isFailed = (coverFailedCount.find(tid) != coverFailedCount.end() && coverFailedCount[tid] >= 3);
                     if (coverTextures.find(tid) == coverTextures.end() && !isFailed) {
                         std::lock_guard<std::mutex> qlock(imageQueueMutex);
-                        auto it = std::find(imageDownloadQueue.begin(), imageDownloadQueue.end(), tid);
-                        if (it != imageDownloadQueue.end()) {
-                            imageDownloadQueue.erase(it);
+                        if (g_enqueuedCovers.find(tid) == g_enqueuedCovers.end()) {
+                            g_enqueuedCovers.insert(tid);
+                            imageDownloadQueue.push_front(tid); // Ekrandaki kapaklara anında öncelik ver
                         }
-                        imageDownloadQueue.insert(imageDownloadQueue.begin(), tid);
                     }
 
-                    if (coverTextures.find(tid) != coverTextures.end()) {
-                        SDL_Rect coverRect = {x, y, itemW, itemH};
-                        SDL_RenderCopy(renderer, coverTextures[tid], NULL, &coverRect);
-                    } else {
-                        roundedBoxRGBA(renderer, x, y, x+itemW, y+itemH, 10, 42, 41, 64, 255);
-                        if (coverFailedCount[tid] >= 3) {
-                            drawText("Kapak", x + 80, y + 40, colorRed, fontSmall);
-                            drawText("Bulunamadı", x + 60, y + 60, colorRed, fontSmall);
+                    if (y > -itemH - 50 && y < SCREEN_H) {
+                        if (coverTextures.find(tid) != coverTextures.end()) {
+                            SDL_Rect coverRect = {x, y, itemW, itemH};
+                            SDL_RenderCopy(renderer, coverTextures[tid], NULL, &coverRect);
                         } else {
-                            drawText("Kapak", x + 80, y + 40, colorGray, fontSmall);
-                            drawText("Yükleniyor...", x + 55, y + 60, colorGray, fontSmall);
+                            roundedBoxRGBA(renderer, x, y, x+itemW, y+itemH, 10, 42, 41, 64, 255);
+                            if (coverFailedCount[tid] >= 3) {
+                                drawText("Kapak", x + 80, y + 40, colorRed, fontSmall);
+                                drawText("Bulunamadı", x + 60, y + 60, colorRed, fontSmall);
+                            } else {
+                                drawText("Kapak", x + 80, y + 40, colorGray, fontSmall);
+                                drawText("Yükleniyor...", x + 55, y + 60, colorGray, fontSmall);
+                            }
                         }
                     }
                 }
@@ -2305,7 +2877,23 @@ int main(int argc, char **argv) {
                             int fbx = x - 4;
                             int fby = y - 6;
                             roundedBoxRGBA(renderer, fbx, fby, fbx + fbw, fby + fbh, 6, 241, 196, 15, 255);
-                            drawTextCentered("★", fbx + fbw/2, fby + 3, {20, 20, 20, 255}, fontSmall);
+                            int hcx = fbx + fbw / 2;
+                            int hcy = fby + fbh / 2;
+                            filledCircleRGBA(renderer, hcx - 3, hcy - 2, 4, 20, 20, 20, 255);
+                            filledCircleRGBA(renderer, hcx + 3, hcy - 2, 4, 20, 20, 20, 255);
+                            Sint16 hx[3] = { (Sint16)(hcx - 7), (Sint16)(hcx + 7), (Sint16)hcx };
+                            Sint16 hy[3] = { (Sint16)(hcy - 1), (Sint16)(hcy - 1), (Sint16)(hcy + 7) };
+                            filledPolygonRGBA(renderer, hx, hy, 3, 20, 20, 20, 255);
+                        }
+
+                        // "YENİ" Rozeti (Son eklenen 15 yama veya Yeni Eklenenler sekmesi)
+                        bool isNewPatch = (filtered_patches[i].original_index >= (int)all_patches.size() - 15) || (currentState == STATE_YENI_EKLENENLER);
+                        if (isNewPatch) {
+                            int nbw = 46, nbh = 22;
+                            int nbx = filtered_patches[i].is_favorited ? (x + 25) : (x - 4);
+                            int nby = y - 6;
+                            roundedBoxRGBA(renderer, nbx, nby, nbx + nbw, nby + nbh, 6, 0, 150, 230, 255);
+                            drawTextCentered("YENİ", nbx + nbw/2, nby + 3, colorWhite, fontSmall);
                         }
 
                         if (filtered_patches[i].is_installed) {
@@ -2327,7 +2915,8 @@ int main(int argc, char **argv) {
             
             // Scrollbar (Sağ kenarı tam kaplayacak şekilde)
             int maxRow = ((int)filtered_patches.size() - 1) / 4;
-            int totalListHeight = maxRow * (itemH + paddingY) + itemH;
+            int baseGridY = 78;
+            int totalListHeight = baseGridY + maxRow * (itemH + paddingY) + itemH + 20;
             int viewPortHeight = SCREEN_H - 45; // Tam ekran
             if (totalListHeight > viewPortHeight) {
                 int scrollTrackY = 0;
@@ -2370,6 +2959,10 @@ int main(int argc, char **argv) {
             int bx = 320, by = 160, bw = 640, bh = 400;
             if (activeModal == MODAL_SORT) {
                 bx = 340; by = 160; bw = 600; bh = 380;
+            } else if (activeModal == MODAL_SHORTCUT_INFO) {
+                bx = 280; by = 150; bw = 720; bh = 420;
+            } else if (activeModal == MODAL_APPLET_WARNING) {
+                bx = 240; by = 120; bw = 800; bh = 480;
             }
             roundedBoxRGBA(renderer, bx, by, bx+bw, by+bh, 20, 33, 32, 46, 255);
             
@@ -2457,11 +3050,11 @@ int main(int argc, char **argv) {
                 // Favorite Button below cover
                 if (activePatchCopy.is_favorited) {
                     roundedBoxRGBA(renderer, bx+30, by+170, bx+240, by+212, 8, 241, 196, 15, 255);
-                    drawTextCentered("★ Favorilerde (X)", bx+135, by+182, {20, 20, 20, 255}, fontSmall);
+                    drawTextCentered("Favorilerden Çıkar (X)", bx+135, by+182, {20, 20, 20, 255}, fontSmall);
                 } else {
                     roundedBoxRGBA(renderer, bx+30, by+170, bx+240, by+212, 8, 42, 41, 64, 255);
                     roundedRectangleRGBA(renderer, bx+30, by+170, bx+240, by+212, 8, 120, 120, 140, 255);
-                    drawTextCentered("☆ Favoriye Ekle (X)", bx+135, by+182, colorWhite, fontSmall);
+                    drawTextCentered("Favorilere Ekle (X)", bx+135, by+182, colorWhite, fontSmall);
                 }
                 
                 if (activePatchCopy.is_installed) {
@@ -2668,6 +3261,141 @@ int main(int argc, char **argv) {
                         lineRGBA(renderer, cx - 1, cy + 4, cx + 4, cy - 2, 255, 255, 255, 255);
                     }
                 }
+            } else if (activeModal == MODAL_SHORTCUT_INFO) {
+                int centerX = bx + bw / 2;
+                bool isSuccess = isShortcutInstalled();
+
+                if (isSuccess) {
+                    const char* title = "Kısayol Başarıyla Switch Ana Menüsüne EKLENDİ!";
+                    int tw = 0, th = 0;
+                    TTF_SizeUTF8(fontMid, title, &tw, &th);
+                    int badgeR = 11;
+                    int spacing = 12;
+                    int totalW = tw + spacing + badgeR * 2;
+                    int startTitleX = centerX - totalW / 2;
+
+                    int badgeX = 0, badgeY = 0;
+                    if (totalW <= bw - 60) {
+                        drawText(title, startTitleX, by + 30, colorWhite, fontMid);
+                        badgeX = startTitleX + tw + spacing + badgeR;
+                        badgeY = by + 30 + th / 2;
+                    } else {
+                        drawTextCentered(title, centerX, by + 30, colorWhite, fontMid);
+                        badgeX = centerX + tw / 2 + spacing + badgeR;
+                        badgeY = by + 30 + th / 2;
+                        if (badgeX + badgeR > bx + bw - 15) {
+                            badgeX = bx + bw - 25;
+                        }
+                    }
+
+                    // Onay Simgesi (Yeşil onay dairesi ve beyaz tik)
+                    filledCircleRGBA(renderer, badgeX, badgeY, badgeR, 46, 204, 113, 255);
+                    lineRGBA(renderer, badgeX - 5, badgeY, badgeX - 1, badgeY + 4, 255, 255, 255, 255);
+                    lineRGBA(renderer, badgeX - 5, badgeY + 1, badgeX - 1, badgeY + 5, 255, 255, 255, 255);
+                    lineRGBA(renderer, badgeX - 1, badgeY + 4, badgeX + 5, badgeY - 3, 255, 255, 255, 255);
+                    lineRGBA(renderer, badgeX - 1, badgeY + 5, badgeX + 5, badgeY - 2, 255, 255, 255, 255);
+                } else {
+                    drawTextCentered("Ana Menü Kısayolu", centerX, by + 30, colorWhite, fontMid);
+                }
+
+                lineRGBA(renderer, bx + 35, by + 74, bx + bw - 35, by + 74, 60, 60, 85, 255);
+
+                // İç Bilgi Kartı (Yazıların taşmasını önleyen çok satırlı düzen)
+                int cardX = bx + 35;
+                int cardY = by + 92;
+                int cardW = bw - 70;
+                int cardH = 225;
+                roundedBoxRGBA(renderer, cardX, cardY, cardX + cardW, cardY + cardH, 12, 22, 21, 33, 255);
+                roundedRectangleRGBA(renderer, cardX, cardY, cardX + cardW, cardY + cardH, 12, 48, 46, 68, 255);
+
+                if (isSuccess) {
+                    std::string subMsg = "Artık Switch Ana menüsünden YamaNX'i\ndirekt olarak başlatabilirsiniz!";
+                    drawTextCentered(subMsg.c_str(), centerX, cardY + 80, {220, 220, 235, 255}, fontMid);
+                } else {
+                    std::string wrappedMsg = wrapText(g_shortcutStatusMsg, 52);
+                    drawText(wrappedMsg.c_str(), cardX + 25, cardY + 25, colorWhite, fontSmall);
+                }
+
+                std::string installer = findInstallerNroPath();
+                bool canLaunchInstaller = !isShortcutInstalled() && !installer.empty();
+                int btnH = 46;
+                int btnY = by + bh - 65;
+
+                if (canLaunchInstaller) {
+                    std::string instName = getInstallerName(installer);
+                    std::string launchBtnText = instName + "'ı Başlat (X)";
+                    int btnW1 = 280;
+                    int btnX1 = centerX - btnW1 - 10;
+                    roundedBoxRGBA(renderer, btnX1, btnY, btnX1 + btnW1, btnY + btnH, 10, 46, 204, 113, 255);
+                    drawTextCentered(launchBtnText.c_str(), btnX1 + btnW1 / 2, btnY + 13, colorWhite, fontMid);
+
+                    int btnW2 = 180;
+                    int btnX2 = centerX + 10;
+                    roundedBoxRGBA(renderer, btnX2, btnY, btnX2 + btnW2, btnY + btnH, 10, 80, 80, 95, 255);
+                    drawTextCentered("Tamam (B)", btnX2 + btnW2 / 2, btnY + 13, colorWhite, fontMid);
+                } else {
+                    int btnW = 200;
+                    int btnX = centerX - btnW / 2;
+                    roundedBoxRGBA(renderer, btnX, btnY, btnX + btnW, btnY + btnH, 10, isSuccess ? 46 : 108, isSuccess ? 204 : 92, isSuccess ? 113 : 231, 255);
+                    drawTextCentered(isSuccess ? "Harika!" : "Tamam", centerX, btnY + 13, colorWhite, fontMid);
+                }
+            } else if (activeModal == MODAL_APPLET_WARNING) {
+                int centerX = bx + bw / 2;
+
+                // Üst Başlık & Sarı Uyarı Rozeti
+                int iconX = centerX - 145;
+                int iconY = by + 34;
+                filledCircleRGBA(renderer, iconX, iconY, 13, 241, 196, 15, 255);
+                thickLineRGBA(renderer, iconX, iconY - 7, iconX, iconY, 2, 20, 20, 20, 255);
+                filledCircleRGBA(renderer, iconX, iconY + 5, 2, 20, 20, 20, 255);
+
+                drawText("APPLET MODU UYARISI", centerX - 120, by + 23, {241, 196, 15, 255}, fontMid);
+
+                lineRGBA(renderer, bx + 35, by + 64, bx + bw - 35, by + 64, 60, 60, 85, 255);
+
+                // Açıklama Metinleri
+                drawTextCentered("YamaNX şu anda kısıtlı bellek (Applet) modunda çalışıyor.", centerX, by + 76, colorWhite, fontSmall);
+                drawTextCentered("Bu modda indirme ve kurulum sırasında çökme / bellek hataları yaşanabilir.", centerX, by + 98, {200, 200, 220, 255}, fontSmall);
+
+                int boxW = bw - 70;
+                int boxX = bx + 35;
+
+                // 1. ÇÖZÜM KUTUSU (ÖNERİLEN - Kısayol)
+                int m1_y = by + 128, m1_h = 108;
+                roundedBoxRGBA(renderer, boxX, m1_y, boxX + boxW, m1_y + m1_h, 10, 30, 26, 46, 255);
+                roundedRectangleRGBA(renderer, boxX, m1_y, boxX + boxW, m1_y + m1_h, 10, 108, 92, 231, 255);
+
+                const char* tag1 = "1. YÖNTEM (ÖNERİLEN)";
+                int t1w = 0, t1h = 0;
+                TTF_SizeUTF8(fontSmall, tag1, &t1w, &t1h);
+                int tag1W = t1w + 22, tag1H = t1h + 6;
+                roundedBoxRGBA(renderer, boxX + 16, m1_y + 12, boxX + 16 + tag1W, m1_y + 12 + tag1H, 5, 108, 92, 231, 255);
+                drawTextCentered(tag1, boxX + 16 + tag1W / 2, m1_y + 15, colorWhite, fontSmall);
+
+                drawText("Ayarlar menüsünden 'Kısayol Oluştur' ile ana menüye YamaNX ekleyin.", boxX + 18, m1_y + 48, colorWhite, fontSmall);
+                drawText("Kısayol sayesinde uygulamayı doğrudan tam yetkiyle başlatabilirsiniz.", boxX + 18, m1_y + 74, {200, 200, 225, 255}, fontSmall);
+
+                // 2. ÇÖZÜM KUTUSU (Oyun Üzerinden Başlatma)
+                int m2_y = m1_y + m1_h + 14, m2_h = 108;
+                roundedBoxRGBA(renderer, boxX, m2_y, boxX + boxW, m2_y + m2_h, 10, 20, 32, 44, 255);
+                roundedRectangleRGBA(renderer, boxX, m2_y, boxX + boxW, m2_y + m2_h, 10, 41, 128, 185, 255);
+
+                const char* tag2 = "2. YÖNTEM (OYUNLA AÇMA)";
+                int t2w = 0, t2h = 0;
+                TTF_SizeUTF8(fontSmall, tag2, &t2w, &t2h);
+                int tag2W = t2w + 22, tag2H = t2h + 6;
+                roundedBoxRGBA(renderer, boxX + 16, m2_y + 12, boxX + 16 + tag2W, m2_y + 12 + tag2H, 5, 41, 128, 185, 255);
+                drawTextCentered(tag2, boxX + 16 + tag2W / 2, m2_y + 15, colorWhite, fontSmall);
+
+                drawText("Konsolunuzdaki herhangi bir oyunu başlatırken [R] tuşuna basılı tutun.", boxX + 18, m2_y + 48, colorWhite, fontSmall);
+                drawText("Açılan tam yetkili Homebrew menüsünden YamaNX'e giriş yapın.", boxX + 18, m2_y + 74, {200, 200, 225, 255}, fontSmall);
+
+                // Alt Buton [Anladım (A)]
+                int btnW = 240, btnH = 46;
+                int btnX = centerX - btnW / 2;
+                int btnY = by + bh - 62;
+                roundedBoxRGBA(renderer, btnX, btnY, btnX + btnW, btnY + btnH, 10, 46, 204, 113, 255);
+                drawTextCentered("ANLADIM (A)", centerX, btnY + 13, colorWhite, fontMid);
             }
         }
         
@@ -2677,7 +3405,11 @@ int main(int argc, char **argv) {
         if (currentState != STATE_HAKKINDA && currentState != STATE_AYARLAR) {
             SDL_Color colorLeftText = {200, 198, 216, 255}; // #C8C6D8
             char countText[128];
-            sprintf(countText, "%d yama  •  Sıralama: %s", (int)filtered_patches.size(), g_sortOptions[(int)currentSortMode].shortLabel);
+            if (currentState == STATE_YENI_EKLENENLER) {
+                sprintf(countText, "%d yeni yama  •  En Son Eklenenler", (int)filtered_patches.size());
+            } else {
+                sprintf(countText, "%d yama  •  Sıralama: %s", (int)filtered_patches.size(), g_sortOptions[(int)currentSortMode].shortLabel);
+            }
             drawText(countText, 30, SCREEN_H - 32, colorLeftText, fontSmall);
         }
         
@@ -2693,7 +3425,8 @@ int main(int argc, char **argv) {
         } else if (currentState == STATE_AYARLAR) {
             tags = {
                 { "L/R", "Menü" },
-                { "A/X", "Güncelle" },
+                { "D-Pad", "Gezin" },
+                { "A", "Seç / Çalıştır" },
                 { "+", "Çıkış" }
             };
         } else {
@@ -2729,17 +3462,26 @@ int main(int argc, char **argv) {
             currentX -= 20; // Spacing before the next tag
         }
 
-        // --- Toast Notification ---
+        // --- Prominent Floating Toast Notification ---
         if (toastTimer > 0) {
             toastTimer--;
             int tw = 0, th = 0;
-            TTF_SizeUTF8(fontSmall, toastMessage.c_str(), &tw, &th);
-            int padX = 20, padY = 10;
-            int bw = tw + padX * 2, bh = th + padY * 2;
+            TTF_SizeUTF8(fontMid, toastMessage.c_str(), &tw, &th);
+            int padX = 32, padY = 12;
+            int bw = tw + padX * 2;
+            int bh = th + padY * 2;
             int bx = (SCREEN_W - bw) / 2;
-            int by = 30;
-            roundedBoxRGBA(renderer, bx, by, bx + bw, by + bh, 8, 30, 30, 48, 235);
-            drawText(toastMessage.c_str(), bx + padX, by + padY, colorWhite, fontSmall);
+            int by = 26;
+
+            // Gölge Efekti (Arkaplandan ayırır)
+            roundedBoxRGBA(renderer, bx, by + 4, bx + bw, by + bh + 4, 12, 0, 0, 0, 160);
+            // Koyu Gece Mavisi / Mor Gövde (Arkaplandan ve kartlardan net bir şekilde ayrışır)
+            roundedBoxRGBA(renderer, bx, by, bx + bw, by + bh, 12, 22, 21, 36, 255);
+            // Parlak Mor Vurgu Çerçevesi
+            roundedRectangleRGBA(renderer, bx, by, bx + bw, by + bh, 12, 108, 92, 231, 255);
+            roundedRectangleRGBA(renderer, bx + 1, by + 1, bx + bw - 1, by + bh - 1, 11, 140, 125, 255, 180);
+            // Beyaz, net ve tam ortalanmış fontMid metin
+            drawTextCentered(toastMessage.c_str(), bx + bw / 2, by + padY, colorWhite, fontMid);
         }
 
         SDL_RenderPresent(renderer);
@@ -2756,6 +3498,10 @@ int main(int argc, char **argv) {
     if (threadActive) { threadWaitForExit(&downloadThread); threadClose(&downloadThread); }
 
     for (auto const& [key, val] : coverTextures) SDL_DestroyTexture(val);
+    for (auto& item : readyCovers) {
+        if (item.surf) SDL_FreeSurface(item.surf);
+    }
+    readyCovers.clear();
     for (auto& kv : textCache) {
         for (auto& tex : kv.second) if (tex.first) SDL_DestroyTexture(tex.first);
     }
@@ -2776,7 +3522,12 @@ int main(int argc, char **argv) {
     SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window);
     IMG_Quit(); TTF_Quit(); SDL_Quit(); socketExit(); curl_global_cleanup(); nsExit();
 
-    if (pendingRelaunch) {
+    if (!pendingLaunchNro.empty()) {
+        if (envHasNextLoad()) {
+            std::string args = "\"" + pendingLaunchNro + "\"";
+            envSetNextLoad(pendingLaunchNro.c_str(), args.c_str());
+        }
+    } else if (pendingRelaunch) {
         Updater::instance().relaunch();
     }
     return 0;
