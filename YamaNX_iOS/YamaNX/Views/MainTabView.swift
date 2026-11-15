@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct MainTabView: View {
+    @Environment(\.openURL) private var openURL
     @StateObject private var viewModel = AppViewModel()
     @State private var selectedTab: Int = 0
     
@@ -21,8 +22,12 @@ public struct MainTabView: View {
                             selectedTab: $selectedTab,
                             installedCount: viewModel.installedTitleIds.count,
                             favoritesCount: viewModel.favorites.count,
+                            versionText: "v\(viewModel.currentAppVersion)",
                             isCompact: isCompactLandscape
                         )
+                        .padding(.leading, isCompactLandscape ? 2 : 8)
+                        .padding(.top, isCompactLandscape ? 8 : 14)
+                        .padding(.bottom, max(geo.safeAreaInsets.bottom + 8, isCompactLandscape ? 10 : 14))
                     }
                     
                     // Main Content Area
@@ -68,12 +73,12 @@ public struct MainTabView: View {
                         .background(Color.black.opacity(0.88))
                         .clipShape(Capsule())
                         .overlay(Capsule().stroke(Theme.primaryRed, lineWidth: 1))
-                        .padding(.bottom, isWide ? max(geo.safeAreaInsets.bottom, 16) : 10)
+                        .padding(.bottom, isWide ? max(geo.safeAreaInsets.bottom + 12, 16) : 10)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                     
                     if !isWide {
-                        // Portrait Phone Floating Bottom Bar tucked close to home indicator
+                        // Portrait Phone Floating Bottom Bar positioned snugly above home indicator
                         HStack {
                             TabItem(icon: "square.grid.2x2.fill", label: "Yamalar", isSelected: selectedTab == 0) {
                                 selectedTab = 0
@@ -91,19 +96,19 @@ public struct MainTabView: View {
                                 selectedTab = 4
                             }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
                         .background(
-                            Theme.card.opacity(0.92)
+                            Theme.card.opacity(0.94)
                                 .background(.ultraThinMaterial)
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 22))
                         .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.stroke, lineWidth: 1))
                         .padding(.horizontal, 14)
-                        .padding(.bottom, max(geo.safeAreaInsets.bottom - 14, 10))
+                        .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? 18 : 10)
                         .background(
                             LinearGradient(
-                                colors: [Color.clear, Theme.bg.opacity(0.88), Theme.bg],
+                                colors: [Color.clear, Theme.bg.opacity(0.90), Theme.bg],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -111,10 +116,28 @@ public struct MainTabView: View {
                         )
                     }
                 }
-                .ignoresSafeArea(.container, edges: .bottom)
+                
+                // GitHub Releases Update Modal Overlay
+                if viewModel.isUpdateModalPresented, let update = viewModel.availableUpdate {
+                    UpdatePromptOverlay(
+                        currentVersion: viewModel.currentAppVersion,
+                        update: update,
+                        onOpenRelease: {
+                            openURL(update.releaseURL)
+                        },
+                        onDismiss: {
+                            withAnimation {
+                                viewModel.isUpdateModalPresented = false
+                            }
+                        }
+                    )
+                    .transition(.opacity)
+                    .zIndex(50)
+                }
             }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
         }
+        .ignoresSafeArea(.container, edges: .bottom)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }
 
@@ -122,55 +145,153 @@ private struct SideRail: View {
     @Binding var selectedTab: Int
     let installedCount: Int
     let favoritesCount: Int
+    let versionText: String
     let isCompact: Bool
     
     var body: some View {
-        VStack(spacing: isCompact ? 6 : 10) {
+        VStack(spacing: 0) {
             Image("AppBadge")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: isCompact ? 34 : 44, height: isCompact ? 34 : 44)
+                .frame(width: isCompact ? 32 : 42, height: isCompact ? 32 : 42)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
-                .padding(.top, isCompact ? 10 : 18)
-                .padding(.bottom, isCompact ? 4 : 10)
+                .padding(.top, isCompact ? 10 : 14)
             
-            RailItem(icon: "square.grid.2x2.fill", label: "Yamalar", showLabel: !isCompact, isSelected: selectedTab == 0) {
-                selectedTab = 0
-            }
-            RailItem(icon: "arrow.down.circle.fill", label: "Yüklü", badge: installedCount, showLabel: !isCompact, isSelected: selectedTab == 1) {
-                selectedTab = 1
-            }
-            RailItem(icon: "star.fill", label: "Favoriler", badge: favoritesCount, showLabel: !isCompact, isSelected: selectedTab == 2) {
-                selectedTab = 2
-            }
-            RailItem(icon: "gearshape.fill", label: "Ayarlar", showLabel: !isCompact, isSelected: selectedTab == 3) {
-                selectedTab = 3
-            }
-            RailItem(icon: "info.circle.fill", label: "Hakkında", showLabel: !isCompact, isSelected: selectedTab == 4) {
-                selectedTab = 4
+            Rectangle()
+                .fill(Theme.stroke.opacity(0.6))
+                .frame(height: 1)
+                .padding(.horizontal, 10)
+                .padding(.top, isCompact ? 8 : 12)
+            
+            Spacer(minLength: 4)
+            
+            VStack(spacing: isCompact ? 4 : 8) {
+                RailItem(icon: "square.grid.2x2.fill", label: "Yamalar", showLabel: !isCompact, isSelected: selectedTab == 0) {
+                    selectedTab = 0
+                }
+                RailItem(icon: "arrow.down.circle.fill", label: "Yüklü", badge: installedCount, showLabel: !isCompact, isSelected: selectedTab == 1) {
+                    selectedTab = 1
+                }
+                RailItem(icon: "star.fill", label: "Favoriler", badge: favoritesCount, showLabel: !isCompact, isSelected: selectedTab == 2) {
+                    selectedTab = 2
+                }
+                RailItem(icon: "gearshape.fill", label: "Ayarlar", showLabel: !isCompact, isSelected: selectedTab == 3) {
+                    selectedTab = 3
+                }
+                RailItem(icon: "info.circle.fill", label: "Hakkında", showLabel: !isCompact, isSelected: selectedTab == 4) {
+                    selectedTab = 4
+                }
             }
             
-            Spacer(minLength: 0)
+            Spacer(minLength: 4)
             
-            if !isCompact {
-                Text("v2.1.0")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(Theme.textMuted.opacity(0.6))
-                    .padding(.bottom, 14)
-            }
+            Text(isCompact ? "v2.1" : versionText)
+                .font(.system(size: isCompact ? 9 : 11, weight: .bold))
+                .foregroundColor(Theme.textMuted.opacity(0.65))
+                .padding(.bottom, isCompact ? 8 : 12)
         }
-        .frame(width: isCompact ? 68 : 92)
+        .frame(width: isCompact ? 56 : 86)
         .frame(maxHeight: .infinity)
         .background(
-            Theme.card.opacity(0.96)
-                .ignoresSafeArea(edges: [.leading, .vertical])
+            Theme.card.opacity(0.95)
+                .background(.ultraThinMaterial)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 20))
         .overlay(
-            Rectangle()
-                .fill(Theme.stroke.opacity(0.75))
-                .frame(width: 1),
-            alignment: .trailing
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Theme.stroke, lineWidth: 1)
         )
+    }
+}
+
+private struct UpdatePromptOverlay: View {
+    let currentVersion: String
+    let update: AppUpdateInfo
+    let onOpenRelease: () -> Void
+    let onDismiss: () -> Void
+    
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.72)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    onDismiss()
+                }
+            
+            VStack(spacing: 16) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Theme.primaryRed.opacity(0.18))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "arrow.down.app.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(Theme.primaryRed)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Yeni Sürüm Var!")
+                            .font(.system(size: 18, weight: .black))
+                            .foregroundColor(.white)
+                        Text("v\(currentVersion)  →  \(update.version)")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(Theme.neonCyan)
+                    }
+                    
+                    Spacer()
+                }
+                
+                if !update.notes.isEmpty {
+                    ScrollView {
+                        Text(update.notes)
+                            .font(.system(size: 13))
+                            .foregroundColor(Theme.textMuted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .lineSpacing(3)
+                    }
+                    .frame(maxHeight: 130)
+                    .padding(12)
+                    .background(Color.black.opacity(0.28))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else {
+                    Text("YamaNX'in daha yeni bir sürümü GitHub Releases üzerinde yayınlandı. Güncel IPA dosyasını indirmek için aşağıdaki butonu kullanabilirsiniz.")
+                        .font(.system(size: 13))
+                        .foregroundColor(Theme.textMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineSpacing(3)
+                }
+                
+                HStack(spacing: 10) {
+                    Button(action: onDismiss) {
+                        Text("Daha Sonra")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(Theme.textMuted)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(Theme.cardHover)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.stroke, lineWidth: 1))
+                    }
+                    
+                    Button(action: onOpenRelease) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.up.right.square.fill")
+                            Text("GitHub Releases'a Git")
+                                .font(.system(size: 14, weight: .bold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(Theme.primaryRed)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: 380)
+            .yxCardStyle(radius: 22, border: Theme.primaryRed.opacity(0.55), borderWidth: 1.5)
+            .padding(.horizontal, 24)
+        }
     }
 }
 

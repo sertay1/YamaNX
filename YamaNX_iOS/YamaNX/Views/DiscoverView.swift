@@ -162,7 +162,42 @@ public struct DiscoverView: View {
                         .padding(.horizontal, 16)
                         
                         // Grid
-                        if viewModel.filteredPatches.isEmpty {
+                        if viewModel.isLoading && viewModel.allPatches.isEmpty {
+                            VStack(spacing: 14) {
+                                ProgressView()
+                                    .tint(Theme.primaryRed)
+                                    .scaleEffect(1.2)
+                                Text("Yamalar yükleniyor...")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(Theme.textMuted)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 60)
+                        } else if let err = viewModel.errorMessage, viewModel.allPatches.isEmpty {
+                            VStack(spacing: 14) {
+                                Image(systemName: "wifi.exclamationmark")
+                                    .font(.system(size: 38))
+                                    .foregroundColor(Theme.primaryRed)
+                                Text(err)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(Theme.textMuted)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 24)
+                                Button {
+                                    viewModel.fetchPatches()
+                                } label: {
+                                    Label("Tekrar Dene", systemImage: "arrow.clockwise")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 18)
+                                        .padding(.vertical, 10)
+                                        .background(Theme.primaryRed)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 50)
+                        } else if viewModel.filteredPatches.isEmpty {
                             VStack(spacing: 12) {
                                 Image(systemName: "tray.fill")
                                     .font(.system(size: 40))

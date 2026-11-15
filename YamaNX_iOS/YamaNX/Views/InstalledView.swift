@@ -142,11 +142,13 @@ private struct InstalledRow: View {
                     .lineLimit(1)
                 
                 HStack(spacing: 8) {
-                    Text(patch.size)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Theme.neonCyan)
-                    Text("•")
-                        .foregroundColor(Theme.textMuted)
+                    if !patch.size.isEmpty && patch.size != "Bilinmiyor" {
+                        Text(patch.size)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Theme.neonCyan)
+                        Text("•")
+                            .foregroundColor(Theme.textMuted)
+                    }
                     Text(patch.yapimci)
                         .font(.system(size: 11))
                         .foregroundColor(Theme.textMuted)

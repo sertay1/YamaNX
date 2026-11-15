@@ -68,45 +68,69 @@ public struct SettingsView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                         
-                        HStack(spacing: 12) {
-                            Button {
-                                DocumentPickerHelper.presentFolderPicker(
-                                    initialDirectory: MeloNXManager.shared.connectedFolderURL
-                                ) { url in
-                                    guard let pickedURL = url else { return }
-                                    if MeloNXManager.shared.saveBookmark(for: pickedURL) {
+                        VStack(spacing: 10) {
+                            HStack(spacing: 12) {
+                                Button {
+                                    DocumentPickerHelper.presentFolderPicker(
+                                        initialDirectory: MeloNXManager.shared.connectedFolderURL
+                                    ) { url in
+                                        guard let pickedURL = url else { return }
+                                        if MeloNXManager.shared.saveBookmark(for: pickedURL) {
+                                            viewModel.refreshInstalledStatus()
+                                            viewModel.showToast("MeloNX klasörü başarıyla bağlandı!")
+                                        } else {
+                                            viewModel.showToast("Klasör erişim izni alınamadı.")
+                                        }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "folder.fill")
+                                        Text(viewModel.isMeloNXConnected ? "Klasörü Değiştir" : "MeloNX Klasörünü Seç")
+                                            .font(.system(size: 14, weight: .bold))
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                                    .background(Theme.primaryRed)
+                                    .foregroundColor(.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+                                
+                                if viewModel.isMeloNXConnected {
+                                    Button {
+                                        MeloNXManager.shared.disconnect()
                                         viewModel.refreshInstalledStatus()
-                                        viewModel.showToast("MeloNX klasörü başarıyla bağlandı!")
-                                    } else {
-                                        viewModel.showToast("Klasör erişim izni alınamadı.")
+                                        viewModel.showToast("MeloNX bağlantısı sıfırlandı.")
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .padding(14)
+                                            .background(Color.red.opacity(0.15))
+                                            .foregroundColor(.red)
+                                            .clipShape(RoundedRectangle(cornerRadius: 12))
                                     }
                                 }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "folder.fill")
-                                    Text(viewModel.isMeloNXConnected ? "Klasörü Değiştir" : "MeloNX Klasörünü Seç")
-                                        .font(.system(size: 14, weight: .bold))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(Theme.primaryRed)
-                                .foregroundColor(.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             
-                            if viewModel.isMeloNXConnected {
-                                Button {
-                                    MeloNXManager.shared.disconnect()
+                            Button {
+                                if MeloNXManager.shared.autoDetectMeloNXFolder() {
                                     viewModel.refreshInstalledStatus()
-                                    viewModel.showToast("MeloNX bağlantısı sıfırlandı.")
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .padding(14)
-                                        .background(Color.red.opacity(0.15))
-                                        .foregroundColor(.red)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    viewModel.showToast("MeloNX klasörü otomatik bulundu ve bağlandı!")
+                                } else {
+                                    viewModel.showToast("MeloNX otomatik bulunamadı. Lütfen 'MeloNX Klasörünü Seç' ile manuel seçin.")
                                 }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "wand.and.stars")
+                                        .font(.system(size: 13, weight: .bold))
+                                    Text("Otomatik Bul (LiveContainer)")
+                                        .font(.system(size: 13, weight: .semibold))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .background(Theme.cardHover)
+                                .foregroundColor(Theme.neonCyan)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.neonCyan.opacity(0.35), lineWidth: 1))
                             }
                         }
                     }
@@ -118,30 +142,76 @@ public struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 8) {
                             Text("💡")
-                            Text("Nasıl Yapılır? (Klasör Seçimi)")
+                            Text("Nasıl Yapılır? (Klasör & Mod Seçimi)")
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(.white)
                         }
                         
-                        StepRow(num: "1", text: "Yukarıdaki 'MeloNX Klasörünü Seç' butonuna dokunun.")
-                        StepRow(num: "2", text: "Açılan Dosyalar ekranında 'iPhone'umda / iPad'imde' > 'MeloNX' dizinine gidin.")
-                        StepRow(num: "3", text: "İsterseniz 'mods' klasörünün içine girip sağ üstten 'Aç'a dokunun, isterseniz doğrudan 'MeloNX' klasörünü seçin.")
-                        StepRow(num: "4", text: "YamaNX gerekli 'contents' klasörünü otomatik yapılandıracaktır.")
+                        StepRow(num: "1", text: "LiveContainer kullanıyorsanız 'Otomatik Bul (LiveContainer)' butonuna dokunun. Normal kurulumda 'MeloNX Klasörünü Seç' butonuna basın.")
+                        StepRow(num: "2", text: "Dosyalar ekranında 'iPhone'umda / iPad'imde' > 'MeloNX' (veya 'MeloNX/mods') klasörünün içine girip sağ üstten 'Aç'a dokunun.")
+                        StepRow(num: "3", text: "Yamalar sekmesinden istediğiniz oyunu seçip 'MeloNX'e Kur' butonuna basın; yama 'Turkce_Yama' adıyla otomatik kurulur.")
+                        StepRow(num: "4", text: "MeloNX'te oyuna basılı tutup 'Mods' menüsünden 'Turkce_Yama' modunun aktif (işaretli) olduğunu kontrol edin.")
                     }
                     .padding(18)
                     .yxCardStyle(radius: 20)
                     .padding(.horizontal, 16)
                     
+                    // Update Banner (shown only if a newer GitHub Release exists)
+                    if let update = viewModel.availableUpdate {
+                        HStack(spacing: 12) {
+                            Image(systemName: "arrow.down.app.fill")
+                                .font(.system(size: 22))
+                                .foregroundColor(Theme.primaryRed)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Yeni Sürüm Var: \(update.version)")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                Text("Güncel IPA için GitHub Releases sayfasını açın")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Theme.textMuted)
+                            }
+                            
+                            Spacer()
+                            
+                            Link(destination: update.releaseURL) {
+                                Text("İndir")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(Theme.primaryRed)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .padding(16)
+                        .yxCardStyle(radius: 18, border: Theme.primaryRed.opacity(0.6))
+                        .padding(.horizontal, 16)
+                    }
+                    
                     // App Version Footer
                     HStack {
                         Spacer()
-                        VStack(spacing: 4) {
-                            Text("YamaNX iOS v2.1.0")
+                        VStack(spacing: 8) {
+                            Text("YamaNX iOS v\(viewModel.currentAppVersion)")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundColor(Theme.textMuted)
                             Text("Geliştirici: SertAy  •  MeloNX Edition")
                                 .font(.system(size: 11))
                                 .foregroundColor(Theme.textMuted.opacity(0.6))
+                            
+                            Button {
+                                viewModel.checkForUpdates(manual: true)
+                            } label: {
+                                Label("Güncellemeleri Kontrol Et", systemImage: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(Theme.neonCyan)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 7)
+                                    .background(Theme.neonCyan.opacity(0.12))
+                                    .clipShape(Capsule())
+                            }
+                            .padding(.top, 2)
                         }
                         Spacer()
                     }

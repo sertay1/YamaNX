@@ -5,6 +5,7 @@ public final class MeloNXManager: ObservableObject {
     
     private let bookmarkKey = "MeloNXFolderBookmark"
     private let fallbackPathKey = "MeloNXFolderPath"
+    private var downloadObservation: NSKeyValueObservation?
     
     @Published public var connectedFolderURL: URL?
     @Published public var isConnected: Bool = false
@@ -101,6 +102,77 @@ public final class MeloNXManager: ObservableObject {
         self.isConnected = false
     }
     
+    /// Scans accessible local and sibling app containers (such as LiveContainer's shared
+    /// `Data/Application/<UUID>/Documents` layout) to locate MeloNX automatically.
+    @discardableResult
+    public func autoDetectMeloNXFolder() -> Bool {
+        let fm = FileManager.default
+        let ownHome = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL
+        let ownDocs = (fm.urls(for: .documentDirectory, in: .userDomainMask).first ?? ownHome.appendingPathComponent("Documents")).standardizedFileURL
+        
+        var candidates: [URL] = []
+        
+        // 1. Direct MeloNX subfolder inside current Documents
+        candidates.append(ownDocs.appendingPathComponent("MeloNX"))
+        
+        // 2. Walk up parent directories to inspect sibling containers (LiveContainer / TrollStore)
+        var rootsToScan: [URL] = []
+        var cursor = ownHome
+        for _ in 0..<4 {
+            let parent = cursor.deletingLastPathComponent().standardizedFileURL
+            if parent.path == cursor.path || parent.path == "/" { break }
+            rootsToScan.append(parent)
+            cursor = parent
+        }
+        
+        for root in rootsToScan {
+            guard let children = try? fm.contentsOfDirectory(atPath: root.path) else { continue }
+            for child in children where !child.hasPrefix(".") {
+                let childURL = root.appendingPathComponent(child).standardizedFileURL
+                if childURL.path == ownHome.path || childURL.path == ownDocs.path { continue }
+                
+                candidates.append(childURL)
+                candidates.append(childURL.appendingPathComponent("Documents"))
+                candidates.append(childURL.appendingPathComponent("Documents/MeloNX"))
+                candidates.append(childURL.appendingPathComponent("Data/Documents"))
+                candidates.append(childURL.appendingPathComponent("Data/Documents/MeloNX"))
+            }
+        }
+        
+        for candidate in candidates {
+            let std = candidate.standardizedFileURL
+            if std.path == ownHome.path || std.path == ownDocs.path { continue }
+            if isLikelyMeloNXDirectory(std, fm: fm) {
+                if saveBookmark(for: std) {
+                    return true
+                }
+            }
+        }
+        
+        return false
+    }
+    
+    private func isLikelyMeloNXDirectory(_ dir: URL, fm: FileManager) -> Bool {
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue else {
+            return false
+        }
+        if dir.lastPathComponent.lowercased() == "melonx" {
+            return true
+        }
+        let hasBis = fm.fileExists(atPath: dir.appendingPathComponent("bis").path)
+        let hasSystem = fm.fileExists(atPath: dir.appendingPathComponent("system").path)
+        let hasMods = fm.fileExists(atPath: dir.appendingPathComponent("mods").path)
+        let hasModsContents = fm.fileExists(atPath: dir.appendingPathComponent("mods/contents").path)
+        let hasConfig = fm.fileExists(atPath: dir.appendingPathComponent("Config.json").path)
+            || fm.fileExists(atPath: dir.appendingPathComponent("config.json").path)
+        
+        if hasBis && hasSystem { return true }
+        if hasModsContents && (hasBis || hasSystem || hasConfig) { return true }
+        if hasMods && hasConfig { return true }
+        return false
+    }
+    
     private func resolveContentsURL(from rootURL: URL, alreadyAccessing: Bool) -> URL? {
         let didStart = alreadyAccessing ? false : rootURL.startAccessingSecurityScopedResource()
         defer {
@@ -133,11 +205,18 @@ public final class MeloNXManager: ObservableObject {
                 try fm.createDirectory(at: target, withIntermediateDirectories: true)
             } catch {
                 print("contents klasörü oluşturulamadı: \(error)")
-                // Verify if root itself is at least readable/writable
-                if !fm.fileExists(atPath: rootURL.path) {
-                    return nil
-                }
+                return nil
             }
+        }
+        
+        // Verify real write permission (do not report connected on read-only paths)
+        let probeURL = target.appendingPathComponent(".yamanx_write_test_\(UUID().uuidString)")
+        do {
+            try Data("ok".utf8).write(to: probeURL)
+            try? fm.removeItem(at: probeURL)
+        } catch {
+            print("contents klasörü yazma izni doğrulaması başarısız: \(error)")
+            return nil
         }
         
         return target
@@ -162,16 +241,42 @@ public final class MeloNXManager: ObservableObject {
         
         for item in items {
             let range = NSRange(location: 0, length: item.utf16.count)
-            if titleIdRegex?.firstMatch(in: item, range: range) != nil {
-                let subURL = contentsURL.appendingPathComponent(item)
-                var isDir: ObjCBool = false
-                if fm.fileExists(atPath: subURL.path, isDirectory: &isDir), isDir.boolValue {
-                    installed.insert(item.uppercased())
-                }
+            guard titleIdRegex?.firstMatch(in: item, range: range) != nil else { continue }
+            
+            let subURL = contentsURL.appendingPathComponent(item)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: subURL.path, isDirectory: &isDir), isDir.boolValue else { continue }
+            
+            if hasActivePatchFiles(in: subURL, fm: fm) {
+                installed.insert(item.uppercased())
             }
         }
         
         return installed
+    }
+    
+    private func hasActivePatchFiles(in titleDir: URL, fm: FileManager) -> Bool {
+        guard let children = try? fm.contentsOfDirectory(atPath: titleDir.path) else { return false }
+        let visibleChildren = children.filter { !$0.hasPrefix(".") }
+        if visibleChildren.isEmpty { return false }
+        
+        // Check Ryujinx/MeloNX mod structure (<title_id>/Turkce_Yama/romfs or any mod subfolder)
+        // as well as legacy direct (<title_id>/romfs) placement
+        for child in visibleChildren {
+            let childURL = titleDir.appendingPathComponent(child)
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: childURL.path, isDirectory: &isDir), isDir.boolValue {
+                let lower = child.lowercased()
+                if lower == "romfs" || lower == "exefs" {
+                    return true
+                }
+                if let subItems = try? fm.contentsOfDirectory(atPath: childURL.path),
+                   subItems.contains(where: { !$0.hasPrefix(".") }) {
+                    return true
+                }
+            }
+        }
+        return false
     }
     
     public func installPatch(
@@ -187,88 +292,222 @@ public final class MeloNXManager: ObservableObject {
         }
         
         let tempZip = FileManager.default.temporaryDirectory.appendingPathComponent("\(titleId)_\(UUID().uuidString).zip")
-        let tempExtract = FileManager.default.temporaryDirectory.appendingPathComponent("extract_\(titleId)_\(UUID().uuidString)")
         
         let session = URLSession(configuration: .default)
-        let task = session.downloadTask(with: downloadURL) { localURL, response, error in
+        downloadObservation?.invalidate()
+        downloadObservation = nil
+        
+        let task = session.downloadTask(with: downloadURL) { [weak self] localURL, response, error in
+            DispatchQueue.main.async {
+                self?.downloadObservation?.invalidate()
+                self?.downloadObservation = nil
+            }
+            
             if let error = error {
-                completion(.failure(error))
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+                return
+            }
+            
+            if let httpResp = response as? HTTPURLResponse, !(200...299).contains(httpResp.statusCode) {
+                DispatchQueue.main.async {
+                    completion(.failure(NSError(
+                        domain: "YamaNX",
+                        code: httpResp.statusCode,
+                        userInfo: [NSLocalizedDescriptionKey: "Sunucu indirme hatası (HTTP \(httpResp.statusCode))."]
+                    )))
+                }
                 return
             }
             
             guard let localURL = localURL else {
-                completion(.failure(NSError(domain: "YamaNX", code: -2, userInfo: [NSLocalizedDescriptionKey: "İndirme dosyası bulunamadı."])))
+                DispatchQueue.main.async {
+                    completion(.failure(NSError(domain: "YamaNX", code: -2, userInfo: [NSLocalizedDescriptionKey: "İndirme dosyası bulunamadı."])))
+                }
                 return
             }
             
             do {
-                if FileManager.default.fileExists(atPath: tempZip.path) {
-                    try FileManager.default.removeItem(at: tempZip)
+                guard let self = self else { return }
+                let fm = FileManager.default
+                defer {
+                    try? fm.removeItem(at: tempZip)
                 }
-                try FileManager.default.moveItem(at: localURL, to: tempZip)
                 
-                try FileManager.default.createDirectory(at: tempExtract, withIntermediateDirectories: true)
-                try ZipExtractor.extract(zipURL: tempZip, to: tempExtract) { p in
-                    DispatchQueue.main.async { progress(0.8 + p * 0.2) }
+                if fm.fileExists(atPath: tempZip.path) {
+                    try fm.removeItem(at: tempZip)
+                }
+                try fm.moveItem(at: localURL, to: tempZip)
+                
+                // Inspect ZIP central directory without loading the archive into RAM
+                let entries = try ZipExtractor.listEntries(zipURL: tempZip)
+                guard !entries.isEmpty else {
+                    throw ZipExtractorError.invalidZipFile
                 }
                 
                 // Access MeloNX contents (works both with and without security scope in LiveContainer)
                 let didStart = rootURL.startAccessingSecurityScopedResource()
                 defer { if didStart { rootURL.stopAccessingSecurityScopedResource() } }
                 
-                if !FileManager.default.fileExists(atPath: contentsURL.path) {
-                    try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
+                if !fm.fileExists(atPath: contentsURL.path) {
+                    try fm.createDirectory(at: contentsURL, withIntermediateDirectories: true)
                 }
                 
-                let targetGameDir = contentsURL.appendingPathComponent(titleId.uppercased())
-                if FileManager.default.fileExists(atPath: targetGameDir.path) {
-                    try FileManager.default.removeItem(at: targetGameDir)
+                // Ryujinx/MeloNX Mod Manager structure:
+                // mods/contents/<lowercase_title_id>/Turkce_Yama/romfs (and/or exefs)
+                let lowerTitleId = titleId.lowercased()
+                let targetTitleDir = contentsURL.appendingPathComponent(lowerTitleId)
+                
+                // Normalize case if an existing uppercase directory exists
+                if let existingEntries = try? fm.contentsOfDirectory(atPath: contentsURL.path),
+                   let matched = existingEntries.first(where: { $0.caseInsensitiveCompare(lowerTitleId) == .orderedSame }),
+                   matched != lowerTitleId {
+                    let oldURL = contentsURL.appendingPathComponent(matched)
+                    let tmpRenameURL = contentsURL.appendingPathComponent("\(lowerTitleId)_tmp_\(UUID().uuidString)")
+                    try? fm.moveItem(at: oldURL, to: tmpRenameURL)
+                    try? fm.moveItem(at: tmpRenameURL, to: targetTitleDir)
                 }
-                try FileManager.default.createDirectory(at: targetGameDir, withIntermediateDirectories: true)
                 
-                // Check if extracted content has TitleID folder inside or direct romfs
-                let extractedItems = (try? FileManager.default.contentsOfDirectory(atPath: tempExtract.path)) ?? []
-                let matchingFolder = extractedItems.first { $0.caseInsensitiveCompare(titleId) == .orderedSame }
+                if !fm.fileExists(atPath: targetTitleDir.path) {
+                    try fm.createDirectory(at: targetTitleDir, withIntermediateDirectories: true)
+                }
                 
-                if let sub = matchingFolder {
-                    let sourceSub = tempExtract.appendingPathComponent(sub)
-                    let subItems = (try? FileManager.default.contentsOfDirectory(atPath: sourceSub.path)) ?? []
-                    for item in subItems {
-                        let from = sourceSub.appendingPathComponent(item)
-                        let to = targetGameDir.appendingPathComponent(item)
-                        try FileManager.default.moveItem(at: from, to: to)
+                // Clean any legacy direct romfs/exefs inside <title_id> so MeloNX sees a clean mod folder
+                for legacyName in ["romfs", "exefs"] {
+                    let legacyURL = targetTitleDir.appendingPathComponent(legacyName)
+                    if fm.fileExists(atPath: legacyURL.path) {
+                        try? fm.removeItem(at: legacyURL)
                     }
-                } else {
-                    for item in extractedItems {
-                        let from = tempExtract.appendingPathComponent(item)
-                        let to = targetGameDir.appendingPathComponent(item)
-                        try FileManager.default.moveItem(at: from, to: to)
-                    }
                 }
                 
-                // Cleanup temp
-                try? FileManager.default.removeItem(at: tempZip)
-                try? FileManager.default.removeItem(at: tempExtract)
+                let targetModDir = targetTitleDir.appendingPathComponent("Turkce_Yama")
+                if fm.fileExists(atPath: targetModDir.path) {
+                    try fm.removeItem(at: targetModDir)
+                }
+                try fm.createDirectory(at: targetModDir, withIntermediateDirectories: true)
+                
+                let hasPayloadDirs = entries.contains { entry in
+                    entry.components.contains {
+                        let lower = $0.lowercased()
+                        return lower == "romfs" || lower == "exefs"
+                    }
+                }
+                let fallbackStripCount = hasPayloadDirs ? 0 : self.computeFallbackStripCount(entries: entries, titleId: titleId)
+                
+                // Stream-extract directly into targetModDir (no duplicate multi-GB tempExtract folder)
+                try ZipExtractor.extract(
+                    zipURL: tempZip,
+                    entries: entries,
+                    destinationFor: { entry in
+                        self.resolveDestination(
+                            for: entry,
+                            hasPayloadDirs: hasPayloadDirs,
+                            fallbackStripCount: fallbackStripCount,
+                            targetModDir: targetModDir
+                        )
+                    },
+                    progressHandler: { p in
+                        DispatchQueue.main.async {
+                            progress(0.75 + p * 0.25)
+                        }
+                    }
+                )
+                
+                // Post-install verification: ensure actual files landed on disk in Turkce_Yama
+                guard self.directoryContainsFiles(targetModDir, fm: fm) else {
+                    try? fm.removeItem(at: targetModDir)
+                    throw NSError(
+                        domain: "YamaNX",
+                        code: -3,
+                        userInfo: [NSLocalizedDescriptionKey: "Kurulum doğrulaması başarısız: Yama dosyaları hedef klasöre yazılamadı."]
+                    )
+                }
                 
                 DispatchQueue.main.async {
                     completion(.success(()))
                 }
             } catch {
-                try? FileManager.default.removeItem(at: tempZip)
-                try? FileManager.default.removeItem(at: tempExtract)
                 DispatchQueue.main.async {
                     completion(.failure(error))
                 }
             }
         }
         
-        let observation = task.progress.observe(\.fractionCompleted) { prog, _ in
+        downloadObservation = task.progress.observe(\.fractionCompleted, options: [.new]) { prog, _ in
             DispatchQueue.main.async {
-                progress(prog.fractionCompleted * 0.8)
+                progress(prog.fractionCompleted * 0.75)
             }
         }
         task.resume()
-        _ = observation
+    }
+    
+    private func resolveDestination(
+        for entry: ZipEntryInfo,
+        hasPayloadDirs: Bool,
+        fallbackStripCount: Int,
+        targetModDir: URL
+    ) -> URL? {
+        let comps = entry.components
+        guard !comps.isEmpty else { return nil }
+        
+        if hasPayloadDirs {
+            guard let idx = comps.firstIndex(where: {
+                let lower = $0.lowercased()
+                return lower == "romfs" || lower == "exefs"
+            }) else {
+                return nil
+            }
+            let payloadRoot = targetModDir.appendingPathComponent(comps[idx].lowercased())
+            let remaining = comps[(idx + 1)...]
+            if remaining.isEmpty {
+                return entry.isDirectory ? payloadRoot : nil
+            }
+            return remaining.reduce(payloadRoot) { $0.appendingPathComponent($1) }
+        } else {
+            guard comps.count > fallbackStripCount else { return nil }
+            let remaining = comps[fallbackStripCount...]
+            return remaining.reduce(targetModDir) { $0.appendingPathComponent($1) }
+        }
+    }
+    
+    private func computeFallbackStripCount(entries: [ZipEntryInfo], titleId: String) -> Int {
+        let fileComponents = entries.filter { !$0.isDirectory }.map { $0.components }
+        guard let first = fileComponents.first, !first.isEmpty else { return 0 }
+        
+        var strip = 0
+        // If all files share a single top-level wrapper folder, strip it
+        if first.count > 1, fileComponents.allSatisfy({ $0.count > 1 && $0[0] == first[0] }) {
+            strip = 1
+            // If the second level is the TitleID wrapper folder, strip that too
+            if first.count > 2,
+               first[1].caseInsensitiveCompare(titleId) == .orderedSame,
+               fileComponents.allSatisfy({ $0.count > 2 && $0[1].caseInsensitiveCompare(titleId) == .orderedSame }) {
+                strip = 2
+            }
+        } else if first.count > 1,
+                  first[0].caseInsensitiveCompare(titleId) == .orderedSame,
+                  fileComponents.allSatisfy({ $0.count > 1 && $0[0].caseInsensitiveCompare(titleId) == .orderedSame }) {
+            strip = 1
+        }
+        return strip
+    }
+    
+    private func directoryContainsFiles(_ url: URL, fm: FileManager) -> Bool {
+        guard let enumerator = fm.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return false
+        }
+        for case let fileURL as URL in enumerator {
+            if let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
+               values.isRegularFile == true {
+                return true
+            }
+        }
+        return false
     }
     
     public func uninstallPatch(titleId: String) throws {
@@ -280,9 +519,23 @@ public final class MeloNXManager: ObservableObject {
         let didStart = rootURL.startAccessingSecurityScopedResource()
         defer { if didStart { rootURL.stopAccessingSecurityScopedResource() } }
         
-        let targetGameDir = contentsURL.appendingPathComponent(titleId.uppercased())
-        if FileManager.default.fileExists(atPath: targetGameDir.path) {
-            try FileManager.default.removeItem(at: targetGameDir)
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(atPath: contentsURL.path) else { return }
+        
+        for entry in entries where entry.caseInsensitiveCompare(titleId) == .orderedSame {
+            let titleDir = contentsURL.appendingPathComponent(entry)
+            let modDir = titleDir.appendingPathComponent("Turkce_Yama")
+            
+            if fm.fileExists(atPath: modDir.path) {
+                try fm.removeItem(at: modDir)
+                let remaining = ((try? fm.contentsOfDirectory(atPath: titleDir.path)) ?? [])
+                    .filter { !$0.hasPrefix(".") }
+                if remaining.isEmpty {
+                    try? fm.removeItem(at: titleDir)
+                }
+            } else if fm.fileExists(atPath: titleDir.path) {
+                try fm.removeItem(at: titleDir)
+            }
         }
     }
 }

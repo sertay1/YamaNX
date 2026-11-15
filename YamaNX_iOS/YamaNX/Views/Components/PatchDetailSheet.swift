@@ -19,6 +19,24 @@ public struct PatchDetailSheet: View {
         viewModel.downloadingPatchId == patch.titleId
     }
     
+    private var isInstalled: Bool {
+        viewModel.installedTitleIds.contains(patch.titleId)
+    }
+    
+    private var isFavorited: Bool {
+        viewModel.favorites.contains(patch.titleId)
+    }
+    
+    private var progressTitle: String {
+        if viewModel.downloadProgress >= 0.75 {
+            return "MeloNX'e Çıkartılıyor..."
+        } else if viewModel.downloadProgress > 0.005 {
+            return "İndiriliyor..."
+        } else {
+            return "Bağlanıyor & İndiriliyor..."
+        }
+    }
+    
     public var body: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
@@ -92,9 +110,9 @@ public struct PatchDetailSheet: View {
                         Button {
                             viewModel.toggleFavorite(titleId: patch.titleId)
                         } label: {
-                            Image(systemName: patch.isFavorited ? "star.fill" : "star")
+                            Image(systemName: isFavorited ? "star.fill" : "star")
                                 .font(.system(size: 20, weight: .bold))
-                                .foregroundColor(patch.isFavorited ? Theme.yellow : .white)
+                                .foregroundColor(isFavorited ? Theme.yellow : .white)
                                 .padding(12)
                                 .background(Theme.cardHover)
                                 .clipShape(Circle())
@@ -113,10 +131,10 @@ public struct PatchDetailSheet: View {
                     // MeloNX Status Box
                     HStack(spacing: 12) {
                         Circle()
-                            .fill(patch.isInstalled ? Theme.green : Theme.primaryRed)
+                            .fill(isInstalled ? Theme.green : Theme.primaryRed)
                             .frame(width: 10, height: 10)
                         
-                        Text(patch.isInstalled ? "MeloNX'te Kurulu" : "MeloNX'te Kurulu Değil")
+                        Text(isInstalled ? "MeloNX'te Kurulu" : "MeloNX'te Kurulu Değil")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white)
                         
@@ -135,18 +153,29 @@ public struct PatchDetailSheet: View {
                     // Download / Progress Section
                     if isThisPatchDownloading {
                         VStack(spacing: 10) {
-                            HStack {
-                                Text("İndiriliyor & MeloNX'e Kuruluyor...")
+                            HStack(spacing: 8) {
+                                if viewModel.downloadProgress <= 0.005 {
+                                    ProgressView()
+                                        .tint(Theme.primaryRed)
+                                        .scaleEffect(0.85)
+                                }
+                                Text(progressTitle)
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundColor(Theme.textMuted)
                                 Spacer()
-                                Text("\(Int(viewModel.downloadProgress * 100))%")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundColor(Theme.primaryRed)
+                                if viewModel.downloadProgress > 0.005 {
+                                    Text("\(Int(viewModel.downloadProgress * 100))%")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(Theme.primaryRed)
+                                }
                             }
                             
-                            ProgressView(value: viewModel.downloadProgress)
-                                .tint(Theme.primaryRed)
+                            if viewModel.downloadProgress > 0.005 {
+                                ProgressView(value: min(max(viewModel.downloadProgress, 0.0), 1.0))
+                                    .tint(Theme.primaryRed)
+                            } else {
+                                IndeterminateBar()
+                            }
                         }
                         .padding(16)
                         .yxCardStyle(radius: 16)
@@ -155,18 +184,25 @@ public struct PatchDetailSheet: View {
                     
                     // Action Buttons
                     VStack(spacing: 12) {
-                        if !patch.isInstalled {
+                        if !isInstalled {
                             Button {
                                 viewModel.install(patch: patch)
                             } label: {
-                                HStack {
-                                    Image(systemName: "arrow.down.circle.fill")
-                                    Text("MeloNX'e Kur")
-                                        .font(.system(size: 16, weight: .bold))
+                                HStack(spacing: 8) {
+                                    if isThisPatchDownloading {
+                                        ProgressView()
+                                            .tint(.white)
+                                        Text("Kuruluyor...")
+                                            .font(.system(size: 16, weight: .bold))
+                                    } else {
+                                        Image(systemName: "arrow.down.circle.fill")
+                                        Text("MeloNX'e Kur")
+                                            .font(.system(size: 16, weight: .bold))
+                                    }
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 16)
-                                .background(Theme.primaryRed)
+                                .background(isThisPatchDownloading ? Theme.primaryRed.opacity(0.6) : Theme.primaryRed)
                                 .foregroundColor(.white)
                                 .clipShape(RoundedRectangle(cornerRadius: 16))
                             }
@@ -199,6 +235,55 @@ public struct PatchDetailSheet: View {
                 .frame(maxWidth: 640)
                 .frame(maxWidth: .infinity)
             }
+            
+            // Sheet Toast Overlay (visible immediately without closing the sheet)
+            if let msg = viewModel.toastMessage {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 8) {
+                        Image(systemName: "bell.badge.fill")
+                            .foregroundColor(Theme.primaryRed)
+                        Text(msg)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.9))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Theme.primaryRed, lineWidth: 1))
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+}
+
+private struct IndeterminateBar: View {
+    @State private var animate: Bool = false
+    
+    var body: some View {
+        GeometryReader { geo in
+            let barWidth = max(geo.size.width * 0.35, 40)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.1))
+                Capsule()
+                    .fill(Theme.primaryRed)
+                    .frame(width: barWidth)
+                    .offset(x: animate ? (geo.size.width - barWidth) : 0)
+                    .animation(
+                        .easeInOut(duration: 0.95).repeatForever(autoreverses: true),
+                        value: animate
+                    )
+            }
+        }
+        .frame(height: 5)
+        .onAppear {
+            animate = true
         }
     }
 }

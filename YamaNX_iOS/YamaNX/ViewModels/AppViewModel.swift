@@ -2,6 +2,13 @@ import Foundation
 import Combine
 import SwiftUI
 
+public struct AppUpdateInfo: Identifiable, Equatable {
+    public let id: String
+    public let version: String
+    public let notes: String
+    public let releaseURL: URL
+}
+
 public final class AppViewModel: ObservableObject {
     @Published public var allPatches: [Patch] = []
     @Published public var isLoading: Bool = false
@@ -17,10 +24,16 @@ public final class AppViewModel: ObservableObject {
     @Published public var downloadingPatchId: String? = nil
     @Published public var downloadProgress: Double = 0.0
     @Published public var toastMessage: String? = nil
+    @Published public var availableUpdate: AppUpdateInfo? = nil
+    @Published public var isUpdateModalPresented: Bool = false
     
     private let favoritesKey = "YamaNXFavorites"
     private let turkishLocale = Locale(identifier: "tr_TR")
     private var cancellables = Set<AnyCancellable>()
+    
+    public var currentAppVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.0"
+    }
     
     public init() {
         loadFavorites()
@@ -33,6 +46,7 @@ public final class AppViewModel: ObservableObject {
             .store(in: &cancellables)
         
         fetchPatches()
+        checkForUpdates()
     }
     
     public var isMeloNXConnected: Bool {
@@ -238,18 +252,25 @@ public final class AppViewModel: ObservableObject {
     }
     
     private func normalize(_ text: String) -> String {
-        return text.lowercased(with: turkishLocale)
-            .folding(options: .diacriticInsensitive, locale: turkishLocale)
+        return text
+            .replacingOccurrences(of: "İ", with: "i")
+            .replacingOccurrences(of: "I", with: "i")
+            .replacingOccurrences(of: "ı", with: "i")
+            .lowercased(with: turkishLocale)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
             .replacingOccurrences(of: "ı", with: "i")
     }
     
     // MARK: - Actions (Install, Uninstall, Favorites)
     
     public func refreshInstalledStatus() {
-        self.installedTitleIds = MeloNXManager.shared.getInstalledTitleIds()
-        for i in 0..<allPatches.count {
-            allPatches[i].isInstalled = installedTitleIds.contains(allPatches[i].titleId)
+        let installed = MeloNXManager.shared.getInstalledTitleIds()
+        self.installedTitleIds = installed
+        var updated = allPatches
+        for i in 0..<updated.count {
+            updated[i].isInstalled = installed.contains(updated[i].titleId)
         }
+        self.allPatches = updated
     }
     
     public func toggleFavorite(titleId: String) {
@@ -261,11 +282,12 @@ public final class AppViewModel: ObservableObject {
             showToast("Favorilere eklendi!")
         }
         saveFavorites()
-        for i in 0..<allPatches.count {
-            if allPatches[i].titleId == titleId {
-                allPatches[i].isFavorited = favorites.contains(titleId)
-            }
+        let isFav = favorites.contains(titleId)
+        var updated = allPatches
+        for i in 0..<updated.count where updated[i].titleId == titleId {
+            updated[i].isFavorited = isFav
         }
+        self.allPatches = updated
     }
     
     private func loadFavorites() {
@@ -278,6 +300,11 @@ public final class AppViewModel: ObservableObject {
     }
     
     public func install(patch: Patch) {
+        if let activeId = downloadingPatchId {
+            if activeId == patch.titleId { return }
+            showToast("Şu anda başka bir yama kuruluyor, lütfen bekleyin.")
+            return
+        }
         guard let url = URL(string: patch.url) else {
             showToast("İndirme linki geçersiz.")
             return
@@ -319,12 +346,84 @@ public final class AppViewModel: ObservableObject {
         withAnimation {
             self.toastMessage = msg
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        let duration: Double = msg.lowercased().contains("hata") ? 4.0 : 2.2
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
             withAnimation {
                 if self.toastMessage == msg {
                     self.toastMessage = nil
                 }
             }
         }
+    }
+    
+    // MARK: - GitHub Releases Update Check
+    
+    public func checkForUpdates(manual: Bool = false) {
+        guard let url = URL(string: "https://api.github.com/repos/sertay1/YamaNX/releases/latest") else { return }
+        
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("YamaNX-iOS", forHTTPHeaderField: "User-Agent")
+        
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self,
+                  error == nil,
+                  let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode),
+                  let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tagName = json["tag_name"] as? String else {
+                if manual {
+                    DispatchQueue.main.async {
+                        self?.showToast("Güncelleme kontrol edilemedi.")
+                    }
+                }
+                return
+            }
+            
+            let htmlString = (json["html_url"] as? String) ?? "https://github.com/sertay1/YamaNX/releases"
+            guard let releaseURL = URL(string: htmlString) else { return }
+            let body = (json["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            
+            let localVersion = self.currentAppVersion
+            if self.isRemoteVersion(tagName, newerThan: localVersion) {
+                let info = AppUpdateInfo(
+                    id: tagName,
+                    version: tagName,
+                    notes: body,
+                    releaseURL: releaseURL
+                )
+                DispatchQueue.main.async {
+                    self.availableUpdate = info
+                    self.isUpdateModalPresented = true
+                }
+            } else if manual {
+                DispatchQueue.main.async {
+                    self.showToast("Uygulamanız güncel (v\(localVersion)).")
+                }
+            }
+        }.resume()
+    }
+    
+    private func isRemoteVersion(_ remote: String, newerThan local: String) -> Bool {
+        func parseComponents(_ str: String) -> [Int] {
+            let cleaned = str.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "^[vV]+", with: "", options: .regularExpression)
+            let numericPrefix = cleaned.prefix { $0.isNumber || $0 == "." }
+            let parts = numericPrefix.split(separator: ".").compactMap { Int($0) }
+            return parts.isEmpty ? [0] : parts
+        }
+        
+        let r = parseComponents(remote)
+        let l = parseComponents(local)
+        let count = max(r.count, l.count)
+        for i in 0..<count {
+            let rv = i < r.count ? r[i] : 0
+            let lv = i < l.count ? l[i] : 0
+            if rv != lv {
+                return rv > lv
+            }
+        }
+        return false
     }
 }
