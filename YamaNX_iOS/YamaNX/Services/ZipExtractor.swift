@@ -146,6 +146,9 @@ public final class ZipExtractor {
     }
     
     private static func decompressRawDeflate(_ compressed: Data, expectedSize: Int) -> Data? {
+        if expectedSize == 0 {
+            return Data()
+        }
         var stream = z_stream()
         // -MAX_WBITS instructs zlib to look for raw deflate stream (no zlib or gzip wrapper)
         var status = inflateInit2_(&stream, -MAX_WBITS, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size))
@@ -153,7 +156,7 @@ public final class ZipExtractor {
         defer { inflateEnd(&stream) }
         
         var output = Data(count: expectedSize)
-        return compressed.withUnsafeBytes { inBuffer in
+        let success: Bool = compressed.withUnsafeBytes { inBuffer in
             output.withUnsafeMutableBytes { outBuffer in
                 stream.next_in = UnsafeMutablePointer<Bytef>(mutating: inBuffer.bindMemory(to: Bytef.self).baseAddress)
                 stream.avail_in = uInt(compressed.count)
@@ -161,9 +164,10 @@ public final class ZipExtractor {
                 stream.avail_out = uInt(expectedSize)
                 
                 status = inflate(&stream, Z_FINISH)
-                return (status == Z_STREAM_END || status == Z_OK) ? output : nil
+                return status == Z_STREAM_END || status == Z_OK
             }
         }
+        return success ? output : nil
     }
 }
 
