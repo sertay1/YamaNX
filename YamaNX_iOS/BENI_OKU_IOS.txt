@@ -1,0 +1,50 @@
+================================================================================
+                    YAMANX iOS (MeloNX Edition) - KULLANIM REHBERİ
+================================================================================
+
+YamaNX iOS, iPhone ve iPad cihazlarınızda çalışan MeloNX Nintendo Switch emülatörü
+için Türkçe yamaları tek tıkla indirip kurmanızı sağlayan yerel iOS uygulamasıdır.
+
+--------------------------------------------------------------------------------
+1. UYGULAMAYI TELEFONA / TABLETE YÜKLEME (IPA YÜKLEME)
+--------------------------------------------------------------------------------
+Apple resmi App Store dışı uygulamalar için sideload yöntemlerini kullanır.
+YamaNX.ipa dosyasını cihazınıza yüklemek için aşağıdaki yöntemlerden birini seçin:
+
+A) Sideloadly İle (En Kolay PC Yöntemi):
+   1. Bilgisayarınıza Sideloadly programını kurun (sideloadly.io).
+   2. iPhone/iPad'inizi kabloyla bilgisayara bağlayın.
+   3. YamaNX.ipa dosyasını Sideloadly penceresine sürükleyin.
+   4. Apple ID'nizi girip "Start" butonuna basın. Uygulama telefonunuza yüklenecektir.
+
+B) SideStore / AltStore İle (Doğrudan Cihazdan):
+   - SideStore veya AltStore uygulamasını açın.
+   - Sol üstteki "+" (Ekle) butonuna basıp indirdiğiniz YamaNX.ipa'yı seçin.
+
+C) TrollStore İle (Kalıcı - Jailbreaksiz):
+   - Eğer cihazınızda TrollStore yüklüyse, YamaNX.ipa'ya dokunup "Install with TrollStore"
+     demeniz yeterlidir; 7 gün sınırı olmadan sınırsız çalışır.
+
+--------------------------------------------------------------------------------
+2. İLK KURULUM: MELONX KLASÖRÜNÜ BAĞLAMA (1 DEFAYA MAHSUS)
+--------------------------------------------------------------------------------
+1. YamaNX iOS uygulamasını açın.
+2. Alt menüden "Ayarlar" sekmesine geçin.
+3. "MeloNX Klasörünü Seç" butonuna dokunun.
+4. Açılan Dosyalar penceresinde şu yolu izleyin:
+   "iPhone'umda" (veya iPad'imde) > "MeloNX" > "mods"
+   (Eğer "mods" klasörünü görmüyorsanız doğrudan "MeloNX" klasörünü seçebilirsiniz).
+5. Sağ üstteki "Aç" butonuna basın.
+6. Artık durum yeşil renkte "Bağlı" olacaktır! İzin kalıcı olarak kaydedilir.
+
+--------------------------------------------------------------------------------
+3. YAMA İNDİRME VE KURMA
+--------------------------------------------------------------------------------
+1. "Yamalar" sekmesinden istediğiniz oyunu arayın veya listeden seçin.
+2. Oyun detayında "MeloNX'e Kur" butonuna dokunun.
+3. YamaNX zip dosyasını indirir, ayıklar ve doğrudan MeloNX'in ilgili oyun
+   klasörüne (mods/contents/<TitleID>/romfs) yerleştirir.
+4. MeloNX'e girip oyununuzu başlattığınızda oyununuz doğrudan Türkçe açılacaktır!
+
+İstediğiniz zaman "Yüklü Oyunlar" sekmesinden yamaları tek tıkla silebilirsiniz.
+================================================================================

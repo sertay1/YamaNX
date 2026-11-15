@@ -1,0 +1,379 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		10000001 /* YamaNXApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000001 /* YamaNXApp.swift */; };
+		10000002 /* Patch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000002 /* Patch.swift */; };
+		10000003 /* SortMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000003 /* SortMode.swift */; };
+		10000004 /* ZipExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000004 /* ZipExtractor.swift */; };
+		10000005 /* MeloNXManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000005 /* MeloNXManager.swift */; };
+		10000006 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000006 /* AppViewModel.swift */; };
+		10000007 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000007 /* Theme.swift */; };
+		10000008 /* FolderPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000008 /* FolderPicker.swift */; };
+		10000009 /* PatchCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000009 /* PatchCard.swift */; };
+		10000010 /* PatchDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000010 /* PatchDetailSheet.swift */; };
+		10000011 /* DiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000011 /* DiscoverView.swift */; };
+		10000012 /* InstalledView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000012 /* InstalledView.swift */; };
+		10000013 /* FavoritesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000013 /* FavoritesView.swift */; };
+		10000014 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000014 /* SettingsView.swift */; };
+		10000015 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000015 /* AboutView.swift */; };
+		10000016 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000016 /* MainTabView.swift */; };
+		10000017 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 20000017 /* Assets.xcassets */; };
+		10000018 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 20000018 /* libz.tbd */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		00000001 /* YamaNX.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YamaNX.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		20000001 /* YamaNXApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YamaNXApp.swift; sourceTree = "<group>"; };
+		20000002 /* Patch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Patch.swift; sourceTree = "<group>"; };
+		20000003 /* SortMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortMode.swift; sourceTree = "<group>"; };
+		20000004 /* ZipExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipExtractor.swift; sourceTree = "<group>"; };
+		20000005 /* MeloNXManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeloNXManager.swift; sourceTree = "<group>"; };
+		20000006 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
+		20000007 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		20000008 /* FolderPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPicker.swift; sourceTree = "<group>"; };
+		20000009 /* PatchCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchCard.swift; sourceTree = "<group>"; };
+		20000010 /* PatchDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchDetailSheet.swift; sourceTree = "<group>"; };
+		20000011 /* DiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverView.swift; sourceTree = "<group>"; };
+		20000012 /* InstalledView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledView.swift; sourceTree = "<group>"; };
+		20000013 /* FavoritesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesView.swift; sourceTree = "<group>"; };
+		20000014 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		20000015 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		20000016 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		20000017 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		20000018 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
+		20000019 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		30000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				10000018 /* libz.tbd in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		40000001 = {
+			isa = PBXGroup;
+			children = (
+				40000002 /* YamaNX */,
+				40000008 /* Products */,
+				40000009 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		40000002 /* YamaNX */ = {
+			isa = PBXGroup;
+			children = (
+				40000003 /* App */,
+				40000004 /* Models */,
+				40000005 /* ViewModels */,
+				40000006 /* Services */,
+				40000007 /* Views */,
+				20000017 /* Assets.xcassets */,
+				20000019 /* Info.plist */,
+			);
+			path = YamaNX;
+			sourceTree = "<group>";
+		};
+		40000003 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				20000001 /* YamaNXApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		40000004 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				20000002 /* Patch.swift */,
+				20000003 /* SortMode.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		40000005 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				20000006 /* AppViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		40000006 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				20000004 /* ZipExtractor.swift */,
+				20000005 /* MeloNXManager.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		40000007 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				20000016 /* MainTabView.swift */,
+				20000011 /* DiscoverView.swift */,
+				20000012 /* InstalledView.swift */,
+				20000013 /* FavoritesView.swift */,
+				20000014 /* SettingsView.swift */,
+				20000015 /* AboutView.swift */,
+				40000010 /* Components */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		40000010 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				20000007 /* Theme.swift */,
+				20000008 /* FolderPicker.swift */,
+				20000009 /* PatchCard.swift */,
+				20000010 /* PatchDetailSheet.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		40000008 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				00000001 /* YamaNX.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		40000009 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				20000018 /* libz.tbd */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		50000001 /* YamaNX */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 60000001 /* Build configuration list for PBXNativeTarget "YamaNX" */;
+			buildPhases = (
+				70000001 /* Sources */,
+				30000001 /* Frameworks */,
+				80000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = YamaNX;
+			productName = YamaNX;
+			productReference = 00000001 /* YamaNX.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		90000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					50000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = 60000002 /* Build configuration list for PBXProject "YamaNX" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 40000001;
+			productRefGroup = 40000008 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				50000001 /* YamaNX */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		80000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				10000017 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		70000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				10000001 /* YamaNXApp.swift in Sources */,
+				10000002 /* Patch.swift in Sources */,
+				10000003 /* SortMode.swift in Sources */,
+				10000004 /* ZipExtractor.swift in Sources */,
+				10000005 /* MeloNXManager.swift in Sources */,
+				10000006 /* AppViewModel.swift in Sources */,
+				10000007 /* Theme.swift in Sources */,
+				10000008 /* FolderPicker.swift in Sources */,
+				10000009 /* PatchCard.swift in Sources */,
+				10000010 /* PatchDetailSheet.swift in Sources */,
+				10000011 /* DiscoverView.swift in Sources */,
+				10000012 /* InstalledView.swift in Sources */,
+				10000013 /* FavoritesView.swift in Sources */,
+				10000014 /* SettingsView.swift in Sources */,
+				10000015 /* AboutView.swift in Sources */,
+				10000016 /* MainTabView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		60000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		60000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		60000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGNING_ALLOWED = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = YamaNX/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sertay.yamanx;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		60000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGNING_ALLOWED = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = YamaNX/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sertay.yamanx;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		60000001 /* Build configuration list for PBXNativeTarget "YamaNX" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				60000005 /* Debug */,
+				60000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		60000002 /* Build configuration list for PBXProject "YamaNX" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				60000003 /* Debug */,
+				60000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = 90000001 /* Project object */;
+}
