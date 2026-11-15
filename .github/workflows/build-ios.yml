@@ -17,6 +17,52 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
+      - name: Prepare Icons and Assets
+        run: |
+          cd "YamaNX_iOS" || cd "YamaNX - iOS"
+          
+          # 1. Simgeyi Apple'ın zorunlu kıldığı 1024x1024 boyutuna otomatik dönüştür
+          ICON_PATH="YamaNX/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png"
+          if [ -f "$ICON_PATH" ]; then
+            sips -z 1024 1024 "$ICON_PATH" --out "$ICON_PATH"
+          fi
+          
+          # 2. Eksik görsel uyarılarını engelle
+          LOGO_PATH="YamaNX/Assets.xcassets/Logo.imageset/logo.png"
+          for QR_DIR in qr_soner.imageset qr_swatalk.imageset qr_sertay.imageset; do
+            TARGET_DIR="YamaNX/Assets.xcassets/$QR_DIR"
+            mkdir -p "$TARGET_DIR"
+            FILE_NAME="${QR_DIR%.imageset}.png"
+            if [ ! -f "$TARGET_DIR/$FILE_NAME" ] && [ -f "$LOGO_PATH" ]; then
+              cp "$LOGO_PATH" "$TARGET_DIR/$FILE_NAME"
+            fi
+          done
+
+          # 3. AccentColor tanımla
+          mkdir -p "YamaNX/Assets.xcassets/AccentColor.colorset"
+          cat << 'EOF' > "YamaNX/Assets.xcassets/AccentColor.colorset/Contents.json"
+          {
+            "colors" : [
+              {
+                "color" : {
+                  "color-space" : "srgb",
+                  "components" : {
+                    "alpha" : "1.000",
+                    "blue" : "0.850",
+                    "green" : "0.600",
+                    "red" : "0.000"
+                  }
+                },
+                "idiom" : "universal"
+              }
+            ],
+            "info" : {
+              "author" : "xcode",
+              "version" : 1
+            }
+          }
+          EOF
+
       - name: Build and Archive iOS App
         run: |
           cd "YamaNX_iOS" || cd "YamaNX - iOS"
@@ -28,7 +74,8 @@ jobs:
             -archivePath build/YamaNX.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Package IPA
         run: |
