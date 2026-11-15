@@ -1,0 +1,54 @@
+name: Build iOS IPA (MeloNX)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Build and Archive iOS App
+        run: |
+          cd "YamaNX_iOS" || cd "YamaNX - iOS"
+          xcodebuild archive \
+            -project YamaNX.xcodeproj \
+            -scheme YamaNX \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath build/YamaNX.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package IPA
+        run: |
+          cd "YamaNX_iOS" || cd "YamaNX - iOS"
+          mkdir -p build/Payload
+          cp -r build/YamaNX.xcarchive/Products/Applications/YamaNX.app build/Payload/
+          cd build
+          zip -r ../YamaNX.ipa Payload
+          cd ..
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: YamaNX-iOS-MeloNX
+          path: "**/YamaNX.ipa"
+
+      - name: Attach to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: "**/YamaNX.ipa"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
