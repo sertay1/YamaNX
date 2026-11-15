@@ -2,94 +2,106 @@ import SwiftUI
 
 public struct InstalledView: View {
     @ObservedObject public var viewModel: AppViewModel
+    public var isWide: Bool = false
     @State private var selectedPatch: Patch? = nil
     
-    public init(viewModel: AppViewModel) {
+    public init(viewModel: AppViewModel, isWide: Bool = false) {
         self.viewModel = viewModel
+        self.isWide = isWide
     }
     
     private var installedPatches: [Patch] {
         viewModel.allPatches.filter { viewModel.installedTitleIds.contains($0.titleId) }
     }
     
+    private func gridColumns(for width: CGFloat) -> [GridItem] {
+        let count = width >= 560 ? 2 : 1
+        return Array(repeating: GridItem(.flexible(), spacing: 12), count: count)
+    }
+    
     public var body: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
             
-            VStack(alignment: .leading, spacing: 16) {
-                // Header
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Yüklü Oyunlar")
-                            .font(.system(size: 26, weight: .bold))
-                            .foregroundColor(.white)
-                        Text("MeloNX mod klasöründe tespit edilen yamalar")
-                            .font(.system(size: 13))
-                            .foregroundColor(Theme.textMuted)
-                    }
-                    Spacer()
-                    Text("\(installedPatches.count)")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(Theme.green)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Theme.green.opacity(0.15))
-                        .clipShape(Capsule())
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
+            GeometryReader { geo in
+                let columns = gridColumns(for: geo.size.width)
                 
-                // MeloNX Folder Status Reminder
-                if !viewModel.isMeloNXConnected {
-                    HStack(spacing: 12) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(Theme.yellow)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("MeloNX Klasörü Bağlı Değil")
-                                .font(.system(size: 13, weight: .bold))
+                VStack(alignment: .leading, spacing: 16) {
+                    // Header
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Yüklü Oyunlar")
+                                .font(.system(size: 26, weight: .bold))
                                 .foregroundColor(.white)
-                            Text("Yüklü yamaların listelenmesi için Ayarlar'dan MeloNX klasörünü seçin.")
-                                .font(.system(size: 11))
+                            Text("MeloNX mod klasöründe tespit edilen yamalar")
+                                .font(.system(size: 13))
                                 .foregroundColor(Theme.textMuted)
                         }
+                        Spacer()
+                        Text("\(installedPatches.count)")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(Theme.green)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Theme.green.opacity(0.15))
+                            .clipShape(Capsule())
                     }
-                    .padding(14)
-                    .yxCardStyle(radius: 14, border: Theme.yellow.opacity(0.5))
                     .padding(.horizontal, 16)
-                }
-                
-                // Content List
-                if installedPatches.isEmpty {
-                    VStack(spacing: 16) {
-                        Spacer()
-                        Image(systemName: "arrow.down.doc.fill")
-                            .font(.system(size: 48))
-                            .foregroundColor(Theme.textMuted.opacity(0.3))
-                        Text("Henüz MeloNX'e kurulmuş yama yok.")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(Theme.textMuted)
-                        Text("Yamalar sekmesinden dilediğiniz oyunu tek tıkla kurabilirsiniz.")
-                            .font(.system(size: 13))
-                            .foregroundColor(Theme.textMuted.opacity(0.8))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
-                } else {
-                    List {
-                        ForEach(installedPatches) { patch in
-                            InstalledRow(patch: patch) {
-                                selectedPatch = patch
-                            } onUninstall: {
-                                viewModel.uninstall(patch: patch)
+                    .padding(.top, 16)
+                    
+                    // MeloNX Folder Status Reminder
+                    if !viewModel.isMeloNXConnected {
+                        HStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(Theme.yellow)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("MeloNX Klasörü Bağlı Değil")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(.white)
+                                Text("Yüklü yamaların listelenmesi için Ayarlar'dan MeloNX klasörünü seçin.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Theme.textMuted)
                             }
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        }
+                        .padding(14)
+                        .yxCardStyle(radius: 14, border: Theme.yellow.opacity(0.5))
+                        .padding(.horizontal, 16)
+                    }
+                    
+                    // Content List / Grid
+                    if installedPatches.isEmpty {
+                        VStack(spacing: 16) {
+                            Spacer()
+                            Image(systemName: "arrow.down.doc.fill")
+                                .font(.system(size: 48))
+                                .foregroundColor(Theme.textMuted.opacity(0.3))
+                            Text("Henüz MeloNX'e kurulmuş yama yok.")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(Theme.textMuted)
+                            Text("Yamalar sekmesinden dilediğiniz oyunu tek tıkla kurabilirsiniz.")
+                                .font(.system(size: 13))
+                                .foregroundColor(Theme.textMuted.opacity(0.8))
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, isWide ? 24 : 80)
+                    } else {
+                        ScrollView {
+                            LazyVGrid(columns: columns, spacing: 12) {
+                                ForEach(installedPatches) { patch in
+                                    InstalledRow(patch: patch) {
+                                        selectedPatch = patch
+                                    } onUninstall: {
+                                        viewModel.uninstall(patch: patch)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, isWide ? 28 : 96)
                         }
                     }
-                    .listStyle(PlainListStyle())
                 }
             }
         }

@@ -1,7 +1,11 @@
 import SwiftUI
 
 public struct AboutView: View {
-    public init() {}
+    public var isWide: Bool = false
+    
+    public init(isWide: Bool = false) {
+        self.isWide = isWide
+    }
     
     public var body: some View {
         ZStack {
@@ -14,7 +18,7 @@ public struct AboutView: View {
                         Image("Logo")
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(height: 48)
+                            .frame(height: 60)
                         
                         Text("v2.1.0 • MeloNX Edition")
                             .font(.system(size: 13, weight: .bold))
@@ -174,8 +178,10 @@ public struct AboutView: View {
                     .padding(18)
                     .yxCardStyle(radius: 18)
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 90)
+                    .padding(.bottom, isWide ? 28 : 96)
                 }
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity)
             }
         }
     }

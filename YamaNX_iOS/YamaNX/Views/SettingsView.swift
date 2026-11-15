@@ -2,10 +2,11 @@ import SwiftUI
 
 public struct SettingsView: View {
     @ObservedObject public var viewModel: AppViewModel
-    @State private var showingFolderPicker: Bool = false
+    public var isWide: Bool = false
     
-    public init(viewModel: AppViewModel) {
+    public init(viewModel: AppViewModel, isWide: Bool = false) {
         self.viewModel = viewModel
+        self.isWide = isWide
     }
     
     public var body: some View {
@@ -69,7 +70,17 @@ public struct SettingsView: View {
                         
                         HStack(spacing: 12) {
                             Button {
-                                showingFolderPicker = true
+                                DocumentPickerHelper.presentFolderPicker(
+                                    initialDirectory: MeloNXManager.shared.connectedFolderURL
+                                ) { url in
+                                    guard let pickedURL = url else { return }
+                                    if MeloNXManager.shared.saveBookmark(for: pickedURL) {
+                                        viewModel.refreshInstalledStatus()
+                                        viewModel.showToast("MeloNX klasörü başarıyla bağlandı!")
+                                    } else {
+                                        viewModel.showToast("Klasör erişim izni alınamadı.")
+                                    }
+                                }
                             } label: {
                                 HStack {
                                     Image(systemName: "folder.fill")
@@ -113,51 +124,9 @@ public struct SettingsView: View {
                         }
                         
                         StepRow(num: "1", text: "Yukarıdaki 'MeloNX Klasörünü Seç' butonuna dokunun.")
-                        StepRow(num: "2", text: "Açılan Dosyalar ekranında 'iPhone'umda' > 'MeloNX' dizinine gidin.")
-                        StepRow(num: "3", text: "Varsa 'mods' klasörünü, yoksa doğrudan 'MeloNX' klasörünü seçip sağ üstteki 'Aç' butonuna basın.")
+                        StepRow(num: "2", text: "Açılan Dosyalar ekranında 'iPhone'umda / iPad'imde' > 'MeloNX' dizinine gidin.")
+                        StepRow(num: "3", text: "İsterseniz 'mods' klasörünün içine girip sağ üstten 'Aç'a dokunun, isterseniz doğrudan 'MeloNX' klasörünü seçin.")
                         StepRow(num: "4", text: "YamaNX gerekli 'contents' klasörünü otomatik yapılandıracaktır.")
-                    }
-                    .padding(18)
-                    .yxCardStyle(radius: 20)
-                    .padding(.horizontal, 16)
-                    
-                    // Sync & Archive Section
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Veri Tabanı & Arşiv")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(.white)
-                        
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Toplam Türkçe Yama")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.white)
-                                Text("GitHub Gist üzerinden anlık güncellenir")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(Theme.textMuted)
-                            }
-                            Spacer()
-                            Text("\(viewModel.allPatches.count)")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(Theme.neonCyan)
-                        }
-                        
-                        Button {
-                            viewModel.fetchPatches()
-                            viewModel.showToast("Yama listesi güncellendi!")
-                        } label: {
-                            HStack {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Yama Listesini Yenile")
-                                    .font(.system(size: 14, weight: .bold))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Theme.cardHover)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.stroke, lineWidth: 1))
-                        }
                     }
                     .padding(18)
                     .yxCardStyle(radius: 20)
@@ -177,18 +146,10 @@ public struct SettingsView: View {
                         Spacer()
                     }
                     .padding(.top, 10)
-                    .padding(.bottom, 90)
+                    .padding(.bottom, isWide ? 28 : 96)
                 }
-            }
-        }
-        .sheet(isPresented: $showingFolderPicker) {
-            FolderPicker { url in
-                if MeloNXManager.shared.saveBookmark(for: url) {
-                    viewModel.refreshInstalledStatus()
-                    viewModel.showToast("MeloNX klasörü başarıyla bağlandı!")
-                } else {
-                    viewModel.showToast("Klasör erişim izni alınamadı.")
-                }
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity)
             }
         }
     }

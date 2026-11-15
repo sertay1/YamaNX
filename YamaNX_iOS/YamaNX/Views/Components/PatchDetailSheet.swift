@@ -27,25 +27,31 @@ public struct PatchDetailSheet: View {
                 VStack(spacing: 20) {
                     // Header Image with dismiss button
                     ZStack(alignment: .topTrailing) {
-                        AsyncImage(url: coverURL) { phase in
-                            switch phase {
-                            case .success(let img):
-                                img.resizable().aspectRatio(16/9, contentMode: .fill)
-                            default:
-                                Rectangle()
-                                    .fill(Theme.cardHover)
-                                    .aspectRatio(16/9, contentMode: .fit)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 24))
-                        .overlay(
-                            LinearGradient(
-                                colors: [Color.clear, Theme.bg],
-                                startPoint: .center,
-                                endPoint: .bottom
+                        Color.white.opacity(0.05)
+                            .aspectRatio(16/9, contentMode: .fit)
+                            .frame(maxHeight: 280)
+                            .overlay(
+                                AsyncImage(url: coverURL) { phase in
+                                    switch phase {
+                                    case .success(let img):
+                                        img
+                                            .resizable()
+                                            .scaledToFill()
+                                    default:
+                                        Image(systemName: "gamecontroller.fill")
+                                            .font(.system(size: 38))
+                                            .foregroundColor(Theme.textMuted.opacity(0.35))
+                                    }
+                                }
                             )
-                        )
+                            .clipShape(RoundedRectangle(cornerRadius: 24))
+                            .overlay(
+                                LinearGradient(
+                                    colors: [Color.clear, Theme.bg],
+                                    startPoint: .center,
+                                    endPoint: .bottom
+                                )
+                            )
                         
                         Button(action: onDismiss) {
                             Image(systemName: "xmark")
@@ -190,6 +196,8 @@ public struct PatchDetailSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 30)
                 }
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
             }
         }
     }

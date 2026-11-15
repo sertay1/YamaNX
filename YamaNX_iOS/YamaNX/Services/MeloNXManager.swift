@@ -4,6 +4,7 @@ public final class MeloNXManager: ObservableObject {
     public static let shared = MeloNXManager()
     
     private let bookmarkKey = "MeloNXFolderBookmark"
+    private let fallbackPathKey = "MeloNXFolderPath"
     
     @Published public var connectedFolderURL: URL?
     @Published public var isConnected: Bool = false
@@ -14,11 +15,9 @@ public final class MeloNXManager: ObservableObject {
     }
     
     public func saveBookmark(for url: URL) -> Bool {
-        guard url.startAccessingSecurityScopedResource() else {
-            return false
-        }
-        defer { url.stopAccessingSecurityScopedResource() }
+        let didStart = url.startAccessingSecurityScopedResource()
         
+        var savedBookmark = false
         do {
             let bookmarkData = try url.bookmarkData(
                 options: .minimalBookmark,
@@ -26,72 +25,119 @@ public final class MeloNXManager: ObservableObject {
                 relativeTo: nil
             )
             UserDefaults.standard.set(bookmarkData, forKey: bookmarkKey)
-            restoreBookmark()
-            return true
+            savedBookmark = true
         } catch {
-            print("Bookmark kaydetme hatası: \(error)")
+            print("Bookmark kaydetme uyarısı (yedek yol kullanılacak): \(error)")
+        }
+        
+        // Save raw path as fallback (especially helpful inside LiveContainer or local containers)
+        UserDefaults.standard.set(url.path, forKey: fallbackPathKey)
+        
+        // Check accessibility while scope is active
+        let contents = resolveContentsURL(from: url, alreadyAccessing: didStart)
+        
+        if didStart {
+            url.stopAccessingSecurityScopedResource()
+        }
+        
+        guard contents != nil || savedBookmark else {
             return false
         }
+        
+        restoreBookmark()
+        return self.isConnected
     }
     
     public func restoreBookmark() {
-        guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else {
+        var resolvedURL: URL? = nil
+        
+        if let data = UserDefaults.standard.data(forKey: bookmarkKey) {
+            var isStale = false
+            do {
+                let url = try URL(
+                    resolvingBookmarkData: data,
+                    options: .withoutUI,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                )
+                resolvedURL = url
+                if isStale {
+                    let didStart = url.startAccessingSecurityScopedResource()
+                    if let newData = try? url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) {
+                        UserDefaults.standard.set(newData, forKey: bookmarkKey)
+                    }
+                    if didStart { url.stopAccessingSecurityScopedResource() }
+                }
+            } catch {
+                print("Bookmark geri yükleme uyarısı: \(error)")
+            }
+        }
+        
+        // Fallback to raw path if bookmark resolution failed (e.g. LiveContainer virtualized container)
+        if resolvedURL == nil, let rawPath = UserDefaults.standard.string(forKey: fallbackPathKey), !rawPath.isEmpty {
+            let candidate = URL(fileURLWithPath: rawPath)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                resolvedURL = candidate
+            }
+        }
+        
+        guard let validURL = resolvedURL else {
             self.connectedFolderURL = nil
             self.contentsDirectoryURL = nil
             self.isConnected = false
             return
         }
         
-        var isStale = false
-        do {
-            let resolvedURL = try URL(
-                resolvingBookmarkData: data,
-                options: .withoutUI,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-            
-            if isStale {
-                _ = saveBookmark(for: resolvedURL)
-            }
-            
-            self.connectedFolderURL = resolvedURL
-            self.contentsDirectoryURL = resolveContentsURL(from: resolvedURL)
-            self.isConnected = (self.contentsDirectoryURL != nil)
-        } catch {
-            print("Bookmark geri yükleme hatası: \(error)")
-            self.connectedFolderURL = nil
-            self.contentsDirectoryURL = nil
-            self.isConnected = false
-        }
+        self.connectedFolderURL = validURL
+        self.contentsDirectoryURL = resolveContentsURL(from: validURL, alreadyAccessing: false)
+        self.isConnected = (self.contentsDirectoryURL != nil)
     }
     
     public func disconnect() {
         UserDefaults.standard.removeObject(forKey: bookmarkKey)
+        UserDefaults.standard.removeObject(forKey: fallbackPathKey)
         self.connectedFolderURL = nil
         self.contentsDirectoryURL = nil
         self.isConnected = false
     }
     
-    private func resolveContentsURL(from rootURL: URL) -> URL? {
-        guard rootURL.startAccessingSecurityScopedResource() else { return nil }
-        defer { rootURL.stopAccessingSecurityScopedResource() }
+    private func resolveContentsURL(from rootURL: URL, alreadyAccessing: Bool) -> URL? {
+        let didStart = alreadyAccessing ? false : rootURL.startAccessingSecurityScopedResource()
+        defer {
+            if didStart {
+                rootURL.stopAccessingSecurityScopedResource()
+            }
+        }
         
-        let pathLower = rootURL.lastPathComponent.lowercased()
         let fm = FileManager.default
+        let lastComponent = rootURL.lastPathComponent.lowercased()
         
-        var target: URL
-        if pathLower == "contents" {
+        let target: URL
+        if lastComponent == "contents" {
             target = rootURL
-        } else if pathLower == "mods" {
+        } else if lastComponent == "mods" {
             target = rootURL.appendingPathComponent("contents")
+        } else if fm.fileExists(atPath: rootURL.appendingPathComponent("contents").path) && lastComponent != "melonx" {
+            // Selected directory directly contains 'contents'
+            target = rootURL.appendingPathComponent("contents")
+        } else if fm.fileExists(atPath: rootURL.appendingPathComponent("MeloNX/mods").path) {
+            // Selected parent directory of MeloNX
+            target = rootURL.appendingPathComponent("MeloNX/mods/contents")
         } else {
-            // Assume root MeloNX folder
+            // Selected MeloNX root folder (or Documents folder)
             target = rootURL.appendingPathComponent("mods/contents")
         }
         
         if !fm.fileExists(atPath: target.path) {
-            try? fm.createDirectory(at: target, withIntermediateDirectories: true)
+            do {
+                try fm.createDirectory(at: target, withIntermediateDirectories: true)
+            } catch {
+                print("contents klasörü oluşturulamadı: \(error)")
+                // Verify if root itself is at least readable/writable
+                if !fm.fileExists(atPath: rootURL.path) {
+                    return nil
+                }
+            }
         }
         
         return target
@@ -103,8 +149,8 @@ public final class MeloNXManager: ObservableObject {
             return []
         }
         
-        guard rootURL.startAccessingSecurityScopedResource() else { return [] }
-        defer { rootURL.stopAccessingSecurityScopedResource() }
+        let didStart = rootURL.startAccessingSecurityScopedResource()
+        defer { if didStart { rootURL.stopAccessingSecurityScopedResource() } }
         
         let fm = FileManager.default
         guard let items = try? fm.contentsOfDirectory(atPath: contentsURL.path) else {
@@ -166,11 +212,13 @@ public final class MeloNXManager: ObservableObject {
                     DispatchQueue.main.async { progress(0.8 + p * 0.2) }
                 }
                 
-                // Copy into MeloNX contents
-                guard rootURL.startAccessingSecurityScopedResource() else {
-                    throw NSError(domain: "YamaNX", code: -3, userInfo: [NSLocalizedDescriptionKey: "MeloNX klasör erişimi reddedildi."])
+                // Access MeloNX contents (works both with and without security scope in LiveContainer)
+                let didStart = rootURL.startAccessingSecurityScopedResource()
+                defer { if didStart { rootURL.stopAccessingSecurityScopedResource() } }
+                
+                if !FileManager.default.fileExists(atPath: contentsURL.path) {
+                    try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
                 }
-                defer { rootURL.stopAccessingSecurityScopedResource() }
                 
                 let targetGameDir = contentsURL.appendingPathComponent(titleId.uppercased())
                 if FileManager.default.fileExists(atPath: targetGameDir.path) {
@@ -229,10 +277,8 @@ public final class MeloNXManager: ObservableObject {
             throw NSError(domain: "YamaNX", code: -1, userInfo: [NSLocalizedDescriptionKey: "MeloNX klasörü bağlı değil."])
         }
         
-        guard rootURL.startAccessingSecurityScopedResource() else {
-            throw NSError(domain: "YamaNX", code: -3, userInfo: [NSLocalizedDescriptionKey: "MeloNX klasör erişimi reddedildi."])
-        }
-        defer { rootURL.stopAccessingSecurityScopedResource() }
+        let didStart = rootURL.startAccessingSecurityScopedResource()
+        defer { if didStart { rootURL.stopAccessingSecurityScopedResource() } }
         
         let targetGameDir = contentsURL.appendingPathComponent(titleId.uppercased())
         if FileManager.default.fileExists(atPath: targetGameDir.path) {

@@ -18,29 +18,27 @@ public struct PatchCard: View {
     public var body: some View {
         Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 0) {
-                // Cover Image
+                // Cover Image (locked 16:9 container so grid heights never shift)
                 ZStack(alignment: .topTrailing) {
-                    AsyncImage(url: coverURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(16/9, contentMode: .fill)
-                        case .failure(_), .empty:
-                            Rectangle()
-                                .fill(Color.white.opacity(0.05))
-                                .aspectRatio(16/9, contentMode: .fit)
-                                .overlay(
+                    Color.white.opacity(0.05)
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .overlay(
+                            AsyncImage(url: coverURL) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                case .failure(_), .empty:
                                     Image(systemName: "gamecontroller.fill")
                                         .font(.system(size: 28))
                                         .foregroundColor(Theme.textMuted.opacity(0.4))
-                                )
-                        @unknown default:
-                            EmptyView()
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .clipped()
+                                @unknown default:
+                                    EmptyView()
+                                }
+                            }
+                        )
+                        .clipped()
                     
                     // Favorite Star Button
                     Button(action: onToggleFavorite) {
@@ -111,34 +109,43 @@ public struct PatchCard: View {
 
 public struct FeaturedCard: View {
     public let patch: Patch
+    public var width: CGFloat = 260
     public let onSelect: () -> Void
+    
+    private var cardHeight: CGFloat {
+        width * 9.0 / 16.0
+    }
     
     private var coverURL: URL? {
         URL(string: "https://raw.githubusercontent.com/sertay1/YamaNX-Covers/main/\(patch.titleId).jpg")
     }
     
-    public init(patch: Patch, onSelect: @escaping () -> Void) {
+    public init(patch: Patch, width: CGFloat = 260, onSelect: @escaping () -> Void) {
         self.patch = patch
+        self.width = width
         self.onSelect = onSelect
     }
     
     public var body: some View {
         Button(action: onSelect) {
             ZStack(alignment: .bottomLeading) {
-                AsyncImage(url: coverURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(16/9, contentMode: .fill)
-                    default:
-                        Rectangle()
-                            .fill(Color.white.opacity(0.06))
-                            .aspectRatio(16/9, contentMode: .fit)
-                    }
-                }
-                .frame(width: 260, height: 146)
-                .clipped()
+                Color.white.opacity(0.06)
+                    .frame(width: width, height: cardHeight)
+                    .overlay(
+                        AsyncImage(url: coverURL) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            default:
+                                Image(systemName: "gamecontroller.fill")
+                                    .font(.system(size: 26))
+                                    .foregroundColor(Theme.textMuted.opacity(0.35))
+                            }
+                        }
+                    )
+                    .clipped()
                 
                 // Gradient Shadow
                 LinearGradient(
@@ -176,7 +183,7 @@ public struct FeaturedCard: View {
                 }
                 .padding(10)
             }
-            .frame(width: 260, height: 146)
+            .frame(width: width, height: cardHeight)
             .yxCardStyle(radius: 16)
         }
         .buttonStyle(PlainButtonStyle())
