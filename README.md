@@ -103,6 +103,26 @@ Android cihazlar için APK formatını derledim. Eden emülatörüyle uyumlu ça
 
 ---
 
+## 🍎 iOS / iPadOS Emülatör Versiyonu (MeloNX Edition)
+
+iPhone ve iPad cihazlardaki **MeloNX** emülatörü için [YamaNX.ipa](../../releases) dosyasını yayınladım. Uygulamayı aşağıdaki adımları izleyerek kolayca kurabilirsiniz:
+
+### 1. Uygulamayı Kurma *(MeloNX'i Hangi Araçla Kurduysanız Onunla Kurun)*
+1. [Releases](../../releases) sayfasından en güncel **`YamaNX.ipa`** dosyasını iPhone veya iPad'inize indirin.
+2. Kullandığınız araca göre kurulumu tamamlayın:
+   - **SideStore / AltStore:** İndirdiğiniz `YamaNX.ipa` dosyasına dokunun → **Paylaş** → **SideStore** (veya AltStore) ile açın ve kurulumun bitmesini bekleyin. *(Ücretsiz Apple ID'deki 3 uygulama sınırınız doluysa aşağıdaki LiveContainer yöntemini kullanın.)*
+   - **LiveContainer:** LiveContainer'ı açın → sağ üstteki **`+`** butonundan `YamaNX.ipa` dosyasını ekleyin. Ardından LiveContainer içinde **YamaNX ikonuna basılı tutun → Settings → `Fix File Picker`** seçeneğini açın *(klasör seçme ekranının sorunsuz çalışması için önemlidir)*.
+   - **Bilgisayar Üzerinden (Sideloadly):** Bilgisayarda [Sideloadly](https://sideloadly.io/) programını açın, `YamaNX.ipa` dosyasını seçip **Start** butonuna basın.
+   - **TrollStore *(Uyumlu iOS sürümlerinde)*:** `YamaNX.ipa` dosyasını TrollStore ile açıp doğrudan **Install**'a basın.
+
+### 2. MeloNX Klasörünü Bağlama (İlk Açılış)
+1. **YamaNX**'i açın ve **Ayarlar** sekmesine girin.
+2. **MeloNX Klasörünü Seç** butonuna basın.
+3. Açılan Dosyalar ekranında **iPhone'umda / iPad'imde → MeloNX** klasörünün *(LiveContainer kullanıyorsanız ilgili `MeloNX` veri klasörünün)* **içine girin** ve sağ üstteki **Aç** butonuna dokunun.
+4. Ekranda **"Bağlı"** yazısını gördüğünüzde artık **Yamalar** sekmesinden dilediğiniz oyuna tek tıkla Türkçe yama kurabilirsiniz.
+
+---
+
 ## 🔗 İletişim ve Destek
 
 ### 🛡️ SertAy (YamaNX Geliştiricisi)
