@@ -1315,57 +1315,85 @@ bool extractZip(Patch& p, ExtractContext& ctx, const std::string& dest_dir, std:
             continue;
         }
 
-        // ZIP içinde title ID klasörünü bul (tam eşleşme)
-        // Yalnızca klasör adının tam olarak titleID olduğu durumları kabul et
-        size_t tidPos = std::string::npos;
-        size_t searchPos = 0;
-        std::string searchStr = titleIdLower + "/";
-        while ((searchPos = currentFileLower.find(searchStr, searchPos)) != std::string::npos) {
-            // Ya en başta olmalı ya da öncesinde '/' olmalı
-            if (searchPos == 0 || currentFileLower[searchPos - 1] == '/') {
-                tidPos = searchPos;
+        // 1. Önce ZIP içinde 'exefs_patches/' klasörü var mı kontrol et
+        // (Title ID klasörünün yanında veya içinde olabilir -> sdmc:/atmosphere/exefs_patches/ altına kurulur)
+        size_t exefsPatchesPos = std::string::npos;
+        size_t epSearchPos = 0;
+        const std::string epNeedle = "exefs_patches/";
+        while ((epSearchPos = currentFileLower.find(epNeedle, epSearchPos)) != std::string::npos) {
+            if (epSearchPos == 0 || currentFileLower[epSearchPos - 1] == '/') {
+                exefsPatchesPos = epSearchPos;
                 break;
             }
-            searchPos += 1;
+            epSearchPos += 1;
         }
 
-        if (tidPos == std::string::npos) {
-            archive_read_data_skip(a);
-            continue;
-        }
+        std::string relPath;
+        std::string newPath;
 
-        // Title ID klasörü sonrasındaki göreceli yolu al
-        // Örn: "Metroid Prime.../010012101468C000/romfs/UI/UIMP1.pak"
-        //   → relPath = "romfs/UI/UIMP1.pak"
-        std::string relPath = currentFile.substr(tidPos + titleIdLower.size() + 1);
-
-        if (relPath.empty()) {
-            archive_read_data_skip(a);
-            continue;
-        }
-
-        // titleID kök dizinindeki görsel ve çöp dosyaları atla
-        // (cover.jpg, .torrent, .bat, .url gibi yama oluşturucuların eklediği dosyalar)
-        if (relPath.find('/') == std::string::npos) {
-            std::string ext = "";
-            size_t dotPos = relPath.rfind('.');
-            if (dotPos != std::string::npos) {
-                ext = relPath.substr(dotPos);
-                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (exefsPatchesPos != std::string::npos) {
+            relPath = currentFile.substr(exefsPatchesPos + epNeedle.size());
+            if (relPath.empty()) {
+                archive_read_data_skip(a);
+                continue;
             }
-            static const char* skipExts[] = {
-                ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
-                ".torrent", ".url", ".bat", ".lnk", ".nfo", nullptr
-            };
-            bool skip = false;
-            for (int i = 0; skipExts[i]; i++) {
-                if (ext == skipExts[i]) { skip = true; break; }
+            // Atmosphere exefs_patches altında bir alt klasör (<patch_set>/<build_id>.ips) bekler
+            if (relPath.find('/') == std::string::npos) {
+                relPath = "YamaNX_" + p.title_id + "/" + relPath;
             }
-            if (skip) { archive_read_data_skip(a); continue; }
-        }
+            newPath = "sdmc:/atmosphere/exefs_patches/" + relPath;
+        } else {
+            // 2. ZIP içinde title ID klasörünü bul (tam eşleşme)
+            size_t tidPos = std::string::npos;
+            size_t searchPos = 0;
+            std::string searchStr = titleIdLower + "/";
+            while ((searchPos = currentFileLower.find(searchStr, searchPos)) != std::string::npos) {
+                // Ya en başta olmalı ya da öncesinde '/' olmalı
+                if (searchPos == 0 || currentFileLower[searchPos - 1] == '/') {
+                    tidPos = searchPos;
+                    break;
+                }
+                searchPos += 1;
+            }
 
-        // Hedef: sdmc:/atmosphere/contents/<titleID>/romfs/UI/UIMP1.pak
-        std::string newPath = dest_dir + "/" + p.title_id + "/" + relPath;
+            if (tidPos == std::string::npos) {
+                archive_read_data_skip(a);
+                continue;
+            }
+
+            // Title ID klasörü sonrasındaki göreceli yolu al
+            // Örn: "Metroid Prime.../010012101468C000/romfs/UI/UIMP1.pak"
+            //   → relPath = "romfs/UI/UIMP1.pak"
+            relPath = currentFile.substr(tidPos + titleIdLower.size() + 1);
+
+            if (relPath.empty()) {
+                archive_read_data_skip(a);
+                continue;
+            }
+
+            // titleID kök dizinindeki görsel ve çöp dosyaları atla
+            // (cover.jpg, .torrent, .bat, .url gibi yama oluşturucuların eklediği dosyalar)
+            if (relPath.find('/') == std::string::npos) {
+                std::string ext = "";
+                size_t dotPos = relPath.rfind('.');
+                if (dotPos != std::string::npos) {
+                    ext = relPath.substr(dotPos);
+                    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                }
+                static const char* skipExts[] = {
+                    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
+                    ".torrent", ".url", ".bat", ".lnk", ".nfo", nullptr
+                };
+                bool skip = false;
+                for (int i = 0; skipExts[i]; i++) {
+                    if (ext == skipExts[i]) { skip = true; break; }
+                }
+                if (skip) { archive_read_data_skip(a); continue; }
+            }
+
+            // Hedef: sdmc:/atmosphere/contents/<titleID>/romfs/UI/UIMP1.pak
+            newPath = dest_dir + "/" + p.title_id + "/" + relPath;
+        }
 
         // Üst klasörleri oluştur
         size_t lastSlash = newPath.find_last_of('/');
@@ -1518,11 +1546,14 @@ void downloadThreadFunc(void* arg) {
                 }
                 
                 if (cancelDownload) {
+                    for (const auto& f : installedFiles) remove(f.c_str());
                     removeDir("sdmc:/atmosphere/contents/" + p.title_id);
                     setDownloadStatus("İptal Edildi!");
                 } else if (extracted) {
                     // YamaNX_manifest.txt: kurulu tüm dosya yollarını yaz
-                    std::string manifestPath = "sdmc:/atmosphere/contents/" + p.title_id + "/YamaNX_manifest.txt";
+                    std::string titleContentDir = "sdmc:/atmosphere/contents/" + p.title_id;
+                    mkdir(titleContentDir.c_str(), 0777);
+                    std::string manifestPath = titleContentDir + "/YamaNX_manifest.txt";
                     FILE* sig = fopen(manifestPath.c_str(), "w");
                     if (sig) {
                         for (const auto& f : installedFiles)
@@ -1532,6 +1563,7 @@ void downloadThreadFunc(void* arg) {
                     setDownloadStatus("Tamamlandı!");
                     downloadProgress = 100;
                 } else {
+                    for (const auto& f : installedFiles) remove(f.c_str());
                     removeDir("sdmc:/atmosphere/contents/" + p.title_id);
                     setDownloadStatus("HATA: " + extractError);
                 }
