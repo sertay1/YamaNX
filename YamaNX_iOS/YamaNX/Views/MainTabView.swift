@@ -185,7 +185,7 @@ private struct SideRail: View {
             
             Spacer(minLength: 4)
             
-            Text(isCompact ? "v2.1" : versionText)
+            Text(isCompact ? "v2.2" : versionText)
                 .font(.system(size: isCompact ? 9 : 11, weight: .bold))
                 .foregroundColor(Theme.textMuted.opacity(0.65))
                 .padding(.bottom, isCompact ? 8 : 12)

@@ -20,7 +20,7 @@ public struct AboutView: View {
                             .aspectRatio(contentMode: .fit)
                             .frame(height: 60)
                         
-                        Text("v2.1.0 • MeloNX Edition")
+                        Text("v2.2.0 • MeloNX Edition")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundColor(Theme.primaryRed)
                             .padding(.horizontal, 12)

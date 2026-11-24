@@ -390,7 +390,7 @@ public final class MeloNXManager: ObservableObject {
                 let hasPayloadDirs = entries.contains { entry in
                     entry.components.contains {
                         let lower = $0.lowercased()
-                        return lower == "romfs" || lower == "exefs"
+                        return lower == "romfs" || lower == "exefs" || lower == "exefs_patches"
                     }
                 }
                 let fallbackStripCount = hasPayloadDirs ? 0 : self.computeFallbackStripCount(entries: entries, titleId: titleId)
@@ -452,16 +452,30 @@ public final class MeloNXManager: ObservableObject {
         guard !comps.isEmpty else { return nil }
         
         if hasPayloadDirs {
+            if let idxPatches = comps.firstIndex(where: { $0.lowercased() == "exefs_patches" }) {
+                let remaining = comps[(idxPatches + 1)...]
+                guard !entry.isDirectory, let fileName = remaining.last, !fileName.hasPrefix(".") else {
+                    return nil
+                }
+                return targetModDir.appendingPathComponent("exefs").appendingPathComponent(fileName)
+            }
             guard let idx = comps.firstIndex(where: {
                 let lower = $0.lowercased()
                 return lower == "romfs" || lower == "exefs"
             }) else {
                 return nil
             }
-            let payloadRoot = targetModDir.appendingPathComponent(comps[idx].lowercased())
+            let kind = comps[idx].lowercased()
+            let payloadRoot = targetModDir.appendingPathComponent(kind)
             let remaining = comps[(idx + 1)...]
             if remaining.isEmpty {
                 return entry.isDirectory ? payloadRoot : nil
+            }
+            if kind == "exefs", !entry.isDirectory, let fileName = remaining.last {
+                let lowerFile = fileName.lowercased()
+                if lowerFile.hasSuffix(".ips") || lowerFile.hasSuffix(".ips32") || lowerFile.hasSuffix(".pchtxt") {
+                    return payloadRoot.appendingPathComponent(fileName)
+                }
             }
             return remaining.reduce(payloadRoot) { $0.appendingPathComponent($1) }
         } else {

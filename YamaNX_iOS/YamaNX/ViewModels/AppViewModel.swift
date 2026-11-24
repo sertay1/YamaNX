@@ -32,7 +32,7 @@ public final class AppViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     public var currentAppVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.0"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.2.0"
     }
     
     public init() {
