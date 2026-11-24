@@ -2573,7 +2573,7 @@ Bana destek olmak için sosyal medya hesaplarımdan takip edebilirsiniz."""
                     modifier = Modifier.fillMaxWidth(0.72f)
                 )
                 Spacer(Modifier.height(16.dp))
-                MiniChip("v2.1.0", Yx.RedBright)
+                MiniChip("v2.2.0", Yx.RedBright)
             }
         }
 

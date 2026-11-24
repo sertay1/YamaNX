@@ -42,7 +42,7 @@ enum class SortMode(val label: String, val shortLabel: String) {
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
 
-    val currentAppVersion = "2.1.0"
+    val currentAppVersion = "2.2.0"
 
     val allPatches = mutableStateListOf<Patch>()
     val isLoading = mutableStateOf(true)
@@ -663,7 +663,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 updateNotif(80)
 
                 val titleIdFolder = findTitleIdFolder(tempExtractDir, patch.titleId)
-                    ?: throw Exception("ZIP içinde '${patch.titleId}' klasörü bulunamadı!")
+                val exefsPatchesDirs = findFoldersByName(tempExtractDir, "exefs_patches")
+
+                if (titleIdFolder == null && exefsPatchesDirs.isEmpty()) {
+                    throw Exception("ZIP içinde '${patch.titleId}' veya 'exefs_patches' klasörü bulunamadı!")
+                }
 
                 // Install to YamaNX/[GameName]/[TitleId]/
                 val gameDir = File(yamaNxDir, patch.name)
@@ -676,7 +680,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     throw Exception("YamaNX klasörüne yazılamadı. Lütfen 'Ayarlar' menüsünden Tüm Dosyalara Erişim İznini kontrol edin.")
                 }
 
-                titleIdFolder.copyRecursively(destDir, overwrite = true)
+                titleIdFolder?.copyRecursively(destDir, overwrite = true)
+
+                // Copy any files inside exefs_patches/... directly into destDir/exefs/<filename> for Eden emulator compatibility
+                if (exefsPatchesDirs.isNotEmpty()) {
+                    val destExefsDir = File(destDir, "exefs")
+                    destExefsDir.mkdirs()
+                    exefsPatchesDirs.forEach { patchFolder ->
+                        patchFolder.walkTopDown().forEach { f ->
+                            if (f.isFile && !f.name.startsWith(".")) {
+                                f.copyTo(File(destExefsDir, f.name), overwrite = true)
+                            }
+                        }
+                    }
+                    // Remove raw exefs_patches folder if it was inside titleIdFolder
+                    File(destDir, "exefs_patches").deleteRecursively()
+                }
 
                 tempExtractDir.deleteRecursively()
 
@@ -713,6 +732,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         return null
+    }
+
+    private fun findFoldersByName(root: File, folderName: String): List<File> {
+        val target = folderName.lowercase(Locale.ROOT)
+        val result = mutableListOf<File>()
+        val queue = ArrayDeque<File>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val dir = queue.removeFirst()
+            dir.listFiles()?.forEach { child ->
+                if (child.isDirectory) {
+                    if (child.name.lowercase(Locale.ROOT) == target) {
+                        result.add(child)
+                    } else {
+                        queue.add(child)
+                    }
+                }
+            }
+        }
+        return result
     }
 
 }
