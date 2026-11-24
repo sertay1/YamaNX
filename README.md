@@ -1,7 +1,7 @@
-#      YamaNX - Nintendo Switch Türkçe Yama Yükleyicisi
+<h1 align="center">YamaNX - Nintendo Switch Türkçe Yama Yükleyicisi </h1>
 
 <p align="center">
-  <img src="screenshots/icon.jpg" alt="YamaNX Icon" width="180"/>
+  <img src="romfs/icon.jpg" alt="YamaNX Icon" width="180"/>
   <br>
   <i>Nintendo Switch için oyunlarınızı Türkçeleştirmenin en kolay yolu!</i>
 </p>
@@ -11,11 +11,11 @@
 ## 📸 Uygulama Ekran Görüntüleri
 
 <p align="center">
-  <img src="screenshots/YamaNX_Tum_Yamalar.jpg" width="400" alt="Tüm Yamalar"/>
-  <img src="screenshots/YamaNX_Yama_indirvekur.jpg" width="400" alt="Yükleme Ekranı"/>
+  <img src="screenshots/tumyamalar.png" width="400" alt="Tüm Yamalar"/>
+  <img src="screenshots/indirvekur.png" width="400" alt="Yükleme Ekranı"/>
   <br><br>
-  <img src="screenshots/YamaNX_Yuklu_Icerikler.jpg" width="400" alt="Yama Kaldırma"/>
-  <img src="screenshots/YamaNX_Hakkinda.jpg" width="400" alt="Hakkında"/>
+  <img src="screenshots/yukluicerikler.png" width="400" alt="Yama Kaldırma"/>
+  <img src="screenshots/hakkinda.png" width="400" alt="Hakkında"/>
 </p>
 
 ---
@@ -29,9 +29,10 @@ YamaNX uygulamasını, daha önce hiçbir yazılım tecrübem olmadan tamamen ya
 ## ✨ Özellikler
 
 - **Özel Geliştirilmiş Arayüz (SDL2)**: SDL2 ile tasarlanmış ultra hızlı, akıcı, modern ve özelleştirilebilir bir Switch arayüzü. Joy-Con ve Dokunmatik Ekran ile kusursuz çalışır.
-- **Otomatik Kurulum**: Seçtiğiniz oyunun yamasını tek tıkla indirir ve SD kartınızdaki doğru klasöre otomatik olarak çıkartır.
-- **Dinamik Veri Çekme**: Yamalar sürekli güncel kalacak şekilde çevrimiçi olarak listelenir.
-- **Arama ve Filtreleme**: Entegre Switch klavyesi desteği ile devasa arşiv içinde istediğiniz oyunu anında arayıp bulabilirsiniz.
+- **Otomatik Kurulum**: Seçtiğiniz oyunun yamasını (`contents` ve `exefs_patches` dahil) tek tıkla indirir ve SD kartınızdaki doğru klasöre otomatik olarak çıkartır.
+- **Ana Menü Kısayolu Oluşturma**: Uygulama içerisindeki Ayarlar menüsünden tek tıkla Switch ana ekranına doğrudan YamaNX kısayolu ekleyebilirsiniz.
+- **Dinamik Veri Çekme & Otomatik Güncelleme**: Yamalar sürekli güncel kalacak şekilde çevrimiçi olarak listelenir; uygulama yeni sürüm çıktığında kendi içinden güncellenebilir.
+- **Arama, Sıralama ve Favoriler**: Entegre Switch klavyesi desteği ile devasa arşiv içinde istediğiniz oyunu anında arayıp bulabilir, boyuta veya isme göre sıralayabilir ve favorilerinize ekleyebilirsiniz.
 - **Hızlı Erişim**: Hakkında sayfası sayesinde Bağış ve Discord gibi sayısız geliştirici QR koduna tek bir yerden saniyeler içinde ulaşın.
 
 ---
@@ -43,7 +44,7 @@ Uygulamayı doğrudan Switch üzerinden **HB App Store** aracılığıyla indiri
 
 <p align="center">
   <a href="https://hb-app.store/switch/YamaNXTurkishPatcher">
-    <img src="screenshots/hbappstore.png" alt="HB Store İndirme Linki" width="300"/>
+    <img src="romfs/hbappstore.png" alt="HB Store İndirme Linki" width="300"/>
     <br>
     <b>HB Store İndirme Linki</b>
   </a>
@@ -57,6 +58,14 @@ Uygulamayı bilgisayarınız üzerinden indirip SD kartınıza atarak kurabilirs
 1. [Releases](../../releases) sayfasından en güncel `YamaNX.nro` dosyasını indirin.
 2. SD kartınızdaki `switch/` klasörünün içine bu dosyayı atın. *(Eğer klasör yoksa oluşturun: `SD:/switch`)*
 3. Switch üzerinden **Homebrew Menu**'ye (hbmenu) girip YamaNX uygulamasını çalıştırın.
+
+---
+
+### 3. Uygulamayı Nasıl Açacaksınız?
+
+Uygulamayı ilk kez tam performansla (Applet modu olmadan) kullanabilmek için bir oyunu başlatırken **'R'** tuşuna basılı tutarak Homebrew Menu üzerinden açabilirsiniz. Uygulamayı açtıktan sonra **Ayarlar** sekmesinden **"Ana Menüye Kısayol Ekle"** butonuna basarak YamaNX'i doğrudan Switch ana ekranınıza ekleyebilir, sonraki girişlerinizde tıpkı normal bir oyun gibi doğrudan ana menüden başlatabilirsiniz. **(Applet mode hbmenu'den açarsanız Switchiniz %90 ihtimalle crash verecektir)**
+
+---
 
 💡 **Önemli Not:**
 Nintendo Switch üzerinden doğrudan büyük boyutlu yama dosyalarını indirmek, konsolun Wi-Fi hız limitleri nedeniyle bazen uzun sürebilir. Daha hızlı bir alternatif olarak; **Benim ve Swatalk'ın Discord sunucusuna** katılıp yamaları bilgisayarınıza indirebilir ve bir Type-C kablo yardımıyla Switch'inize manuel olarak kurabilirsiniz.
@@ -72,7 +81,7 @@ YamaNX_Manifest_Oluşturucu.bat dosyasını PC'deki yama klasörünün (0100X...
 
 ## 🗄️ Yama Arşivi Hakkında
 
-Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücretsiz yaması ile Soner Çakır, Sinnerclown, Profesör Pikachu, Dede00, emre, davetsiz57 gibi pek çok çevirmen arkadaşın internetten derlediğim çalışmaları yer alıyor. Tespit edebildiğim tüm isimleri oyun seçim ekranına ekledim.
+Yamaların yapımcısı ben değilim. Arşivde; Swatalk'ın 470'ten fazla ücretsiz yaması ile Soner Çakır, Profesör Pikachu, Dede00, emre, davetsiz57 gibi pek çok çevirmen arkadaşın internetten derlediğim çalışmaları yer alıyor. Tespit edebildiğim tüm isimleri oyun seçim ekranına ekledim.
 
 Yama çevirmenlerinin muazzam emekleri için kendilerine oyuncu topluluğu adına çok teşekkür ederim.
 
@@ -80,68 +89,13 @@ Yama çevirmenlerinin muazzam emekleri için kendilerine oyuncu topluluğu adın
 
 ## 🖥️ PC Emülatör Versiyonu
 
-Çok fazla talep olduğundan dolayı PC'deki emülatörler için .nro uygulamasını exe olarak derledim. Ryujinx, Yuzu, Citron ve Eden'ı destekliyor. [YamaNX.PC.exe'yi](../../releases) kurarak direkt kullanabilirsiniz. Ryujinx'te test edildi ve şuan çalışıyor gibi duruyor.
+PC'deki emülatörler için .nro uygulamasını exe olarak derledim. Ryujinx, Yuzu, Citron ve Eden'ı destekliyor. [YamaNX.PC.exe'yi](../../releases) kurarak direkt kullanabilirsiniz. Ryujinx'te test edildi.
 
 ---
 
-## 📱 YamaNX Android Versiyonu
+## 📱 Android Emülatör Versiyonu
 
-Android cihazlar için APK formatını derledim. Eden emülatörüyle uyumlu çalışıyor. Sadece YamaNX.apk dosyasını cihazınıza kurmanız yeterli.
-
----
-
-## 🔗 İletişim ve Destek
-
-### 🛡️ SertAy (YamaNX Geliştiricisi)
-*Uygulama hataları ve arşivdeki eksik yamaların eklenmesi için:*
-
-| Linkler | QR Kod |
-| :--- | :--- |
-| **SertAy Tüm Linkler:** [Linktree Sayfam](https://linktr.ee/yamanx) | <a href="https://linktr.ee/yamanx"><img src="romfs/qr_SertAyTumLinkler.png" width="120"/></a> |
-
----
-
-### 👑 Swatalk (Yama Çevirmeni)
-*Yeni yama istekleri ve arşive destek olmak için:*
-
-| Linkler | QR Kodlar |
-| :--- | :--- |
-| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | <a href="https://discord.com/invite/xshWw2jBK6"><img src="romfs/qr_swatalk_discord.png" width="120"/></a> |
-| **Destek:** [Destek Olmak İçin Tıklayın](https://www.shopier.com/Traltyazi) | <a href="https://www.shopier.com/Traltyazi"><img src="romfs/qr_swatalk_donate.png" width="120"/></a> |
-
----
-
-### 👑 Soner Çakır (Yama Çevirmeni)
-| Linkler | QR Kod |
-| :--- | :--- |
-| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/tB93ZUsRYE) | <a href="https://discord.com/invite/tB93ZUsRYE"><img src="romfs/qr_sonercakir_discord.png" width="120"/></a> |
-
----
-
-### 👑 SinnerClown Çeviri
-| Linkler | QR Kodlar |
-| :--- | :--- |
-| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/nApvcT6Tt6) | <a href="https://discord.com/invite/nApvcT6Tt6"><img src="romfs/qr_sinnerclown_discord.png" width="120"/></a> |
-| **Web Sitesi:** [Siteyi Ziyaret Et](https://sinnerclownceviri.net/forumlar/nintendo-tuerkce-yama.74/) | <a href="https://sinnerclownceviri.net/forumlar/nintendo-tuerkce-yama.74/"><img src="romfs/qr_sinnerclown_site.png" width="120"/></a> |
-
-## 🛠️ Kaynak Koddan Derleme (Building from Source)
-
-Projeyi derlemek için **devkitPro** (devkitA64, libnx) ve aşağıdaki switch portlib kütüphaneleri gereklidir:
-```bash
-dkp-pacman -S switch-sdl2 switch-sdl2_gfx switch-sdl2_image switch-sdl2_ttf switch-libarchive switch-curl switch-mbedtls switch-zlib
-```
-
-Derleme komutu:
-```bash
-make
-```
-
-### 🔒 TLS / SSL Güvenlik Notu
-Uygulama içi güncelleyici varsayılan olarak dahili kök sertifika deposu olmaksızın SSL doğrulamasını devre dışı bırakır (`CURLOPT_SSL_VERIFYPEER, 0L`). Güvenli bir CA sertifika demetiyle derlemek için `UPD_CA_BUNDLE` bayrağı ile sertifika yolu verilebilir (örn: `-DUPD_CA_BUNDLE=\"sdmc:/switch/cacert.pem\"`).
-
-<br>
-<p align="center">İyi oyunlar! &lt;3</p>
-
+Android cihazlar için APK formatını derledim. Eden emülatörüyle uyumlu çalışıyor. Sadece [YamaNX.apk'yı](../../releases) cihazınıza kurmanız yeterli.
 
 ---
 
@@ -172,3 +126,44 @@ iPhone ve iPad cihazlardaki **MeloNX** emülatörü için [YamaNX.ipa](../../rel
 3. **MeloNX** emülatörünü açın, **oyununuzun üstüne basılı tutun → `Mods` (Mod Yönetimi)** seçeneğine dokunun:
    - Listede **`Turkce_Yama`** modunun göründüğünü ve **işaretli (aktif)** olduğunu doğrulayın.
    - *(Eğer kullandığınız MeloNX sürümünde mod klasörünü manuel göstermeniz istenirse, aynı menüden `MeloNX/mods/contents/<TitleID>/Turkce_Yama` klasörünü seçmeniz yeterlidir.)*
+
+---
+
+## 🔗 İletişim ve Destek
+
+### 🛡️ SertAy (YamaNX Geliştiricisi)
+*Uygulama hataları ve arşivdeki eksik yamaların eklenmesi için:*
+
+| Linkler | QR Kod |
+| :--- | :--- |
+| **SertAy Tüm Linkler:** [Linktree Sayfam](https://linktr.ee/yamanx) | <a href="https://linktr.ee/yamanx"><img src="romfs/qr_SertAyTumLinkler.png" width="120"/></a> |
+
+---
+
+### 👑 Swatalk (Yama Çevirmeni)
+*Yeni yama istekleri ve arşive destek olmak için:*
+
+| Linkler | QR Kodlar |
+| :--- | :--- |
+| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/xshWw2jBK6) | <a href="https://discord.com/invite/xshWw2jBK6"><img src="romfs/qr_swatalk_discord.png" width="120"/></a> |
+
+---
+
+### 👑 Soner Çakır (Yama Çevirmeni)
+| Linkler | QR Kod |
+| :--- | :--- |
+| **Discord Sunucusu:** [Katılmak İçin Tıklayın](https://discord.com/invite/tB93ZUsRYE) | <a href="https://discord.com/invite/tB93ZUsRYE"><img src="romfs/qr_sonercakir_discord.png" width="120"/></a> |
+
+
+<br>
+<p align="center">İyi oyunlar! &lt;3</p>
+
+---
+
+## 📄 License / Lisans
+
+Telif Hakkı — © 2026 **SertAy**.  
+Bu proje kişisel ve ticari olmayan kullanım için açıktır. Projenin kaynak belirtilmeksizin paylaşılması, sahiplenilmesi veya satılması kesinlikle yasaktır. Detaylar için lütfen [LICENSE](LICENSE) dosyasını inceleyiniz.
+
+Copyright (c) 2026 **SertAy**.  
+This project is available for personal and non-commercial use with mandatory author attribution. Claiming authorship, unauthorized redistribution, or selling this software is strictly prohibited. Please see the [LICENSE](LICENSE) file for details.
