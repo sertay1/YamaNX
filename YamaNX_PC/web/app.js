@@ -15,6 +15,17 @@ let updateDownloadUrl = '';
 
 const STAR_ICON_HTML = `<svg class="star-icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
 
+function normalizeTr(str) {
+  return String(str || '')
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'i')
+    .replace(/ı/g, 'i')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ı/g, 'i');
+}
+
 // DOM Elements
 const topbarTitle = document.getElementById('topbar-title');
 const topbarSub = document.getElementById('topbar-sub');
@@ -63,7 +74,7 @@ function setupEventListeners() {
   // Search Input with 50ms micro-debounce
   let searchTimer = null;
   searchInput.addEventListener('input', (e) => {
-    searchQuery = e.target.value.trim().toLowerCase();
+    searchQuery = normalizeTr(e.target.value.trim());
     searchClearBtn.style.display = searchQuery ? 'flex' : 'none';
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
@@ -222,7 +233,7 @@ async function fetchInitialData() {
       const data = await eel.get_initial_data()();
       allPatches = data.patches || [];
       allPatches.forEach(p => {
-        p._searchStr = `${p.name} ${p.title_id} ${p.yapimci || ''}`.toLowerCase();
+        p._searchStr = normalizeTr(`${p.name} ${p.title_id} ${p.yapimci || ''}`);
       });
       favoritesSet = new Set(data.favorites || []);
       emulatorsData = data.emulators || {};
@@ -628,12 +639,16 @@ function openCurrentModFolder() {
 function startDownload(patch) {
   isDownloading = true;
   document.getElementById('dl-title').textContent = `${patch.name} Kuruluyor`;
-  document.getElementById('dl-status').textContent = 'İndirme başlatılıyor...';
+  const statusElem = document.getElementById('dl-status');
+  statusElem.textContent = 'İndirme başlatılıyor...';
+  statusElem.style.color = '';
   document.getElementById('dl-fill').style.width = '0%';
   document.getElementById('dl-fill').classList.remove('completed');
   document.getElementById('dl-pct-label').textContent = '%0';
   document.getElementById('dl-post-box').style.display = 'none';
-  document.getElementById('dl-btn-cancel').style.display = 'inline-block';
+  const cancelBtn = document.getElementById('dl-btn-cancel');
+  cancelBtn.textContent = 'İptal Et';
+  cancelBtn.style.display = 'inline-block';
   document.getElementById('dl-btn-close').style.display = 'none';
 
   modalDownload.classList.add('open');
@@ -690,6 +705,14 @@ function on_install_complete(result) {
   if (postBox) postBox.style.display = 'flex';
   if (cancelBtn) cancelBtn.style.display = 'none';
   if (closeBtn) closeBtn.style.display = 'inline-block';
+
+  if (result.emulators) {
+    emulatorsData = result.emulators;
+  }
+  if (result.active_emulator) {
+    activeEmulator = result.active_emulator;
+  }
+  updateEmulatorUI();
 
   if (result.title_id) {
     installedSet.add(result.title_id);
@@ -789,7 +812,7 @@ function renderSettings() {
   updateCard.innerHTML = `
     <div class="update-card-left">
       <h3>YamaNX PC Güncellemeleri</h3>
-      <p>Mevcut Sürüm: <strong>v2.1.0 PC</strong></p>
+      <p>Mevcut Sürüm: <strong>v2.2.0 PC</strong></p>
       <div id="update-check-status" class="update-status-msg" style="color: var(--text-muted);">
         Açılışta otomatik denetlenir.
       </div>
@@ -816,13 +839,34 @@ async function changeEmulatorFolder(emu) {
   if (window.eel) {
     const res = await eel.select_emulator_folder(emu)();
     if (res.chosen) {
-      emulatorsData[emu] = res.info;
+      if (res.emulators) {
+        emulatorsData = res.emulators;
+      } else {
+        emulatorsData[emu] = res.info;
+      }
+      if (res.active_emulator) {
+        activeEmulator = res.active_emulator;
+      }
       renderSettings();
       updateEmulatorUI();
       updateInstalledSet(res.installed_ids || []);
       updateBadges();
       filterAndRender();
     }
+  }
+}
+
+function on_patches_refreshed(patches) {
+  if (!Array.isArray(patches) || patches.length === 0) return;
+  allPatches = patches;
+  allPatches.forEach(p => {
+    p._searchStr = normalizeTr(`${p.name} ${p.title_id} ${p.yapimci || ''}`);
+    p.is_installed = installedSet.has(p.title_id);
+  });
+  updateBadges();
+  renderFeaturedCarousel();
+  if (['yamalar', 'favoriler', 'yuklu'].includes(activeTab)) {
+    filterAndRender();
   }
 }
 
@@ -929,6 +973,7 @@ window.on_install_complete = on_install_complete;
 window.on_install_error = on_install_error;
 window.on_update_check_result = on_update_check_result;
 window.on_window_state_changed = on_window_state_changed;
+window.on_patches_refreshed = on_patches_refreshed;
 
 if (window.eel) {
   eel.expose(on_install_progress);
@@ -936,4 +981,5 @@ if (window.eel) {
   eel.expose(on_install_error);
   eel.expose(on_update_check_result);
   eel.expose(on_window_state_changed);
+  eel.expose(on_patches_refreshed);
 }

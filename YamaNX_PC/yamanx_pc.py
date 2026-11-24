@@ -31,7 +31,7 @@ import emulator_installer as ei
 # ==============================================================================
 # 1. AYARLAR VE DİZİN YAPILANDIRMASI
 # ==============================================================================
-CURRENT_VERSION = "2.1.0"
+CURRENT_VERSION = "2.2.0"
 
 APPDATA_DIR = os.environ.get("APPDATA") or os.path.expanduser("~")
 SETTINGS_DIR = os.path.join(APPDATA_DIR, "YamaNX")
@@ -220,9 +220,15 @@ def fetch_patches():
                 content = response.read().decode("utf-8")
                 remote_patches = load_patches_from_text(content)
                 if len(remote_patches) >= len(all_patches):
+                    changed = len(remote_patches) != len(all_patches)
                     all_patches = remote_patches
                     with open(user_txt, "w", encoding="utf-8") as f:
                         f.write(content)
+                    if changed:
+                        try:
+                            eel.on_patches_refreshed([p.to_dict() for p in all_patches])()
+                        except Exception:
+                            pass
         except Exception as e:
             print(f"Gist güncelleme hatası: {e}")
 
@@ -236,7 +242,6 @@ def scan_installed_ids(emulator_id):
 
     installed = set()
     try:
-        # 715 kez dosya sistemi sorgulamak yerine tek bir scandir ile mevcut modları bul (0.5ms)
         for entry in os.scandir(mods_root):
             if entry.is_dir():
                 tid = entry.name.upper()
@@ -246,6 +251,10 @@ def scan_installed_ids(emulator_id):
                     has_exefs = os.path.isdir(os.path.join(mod_dir, "exefs"))
                     if has_romfs or has_exefs:
                         installed.add(tid)
+                        continue
+                # Eski manifest uyumluluğu
+                if os.path.isfile(os.path.join(entry.path, "YamaNX_manifest.txt")):
+                    installed.add(tid)
     except Exception as e:
         print(f"Mod tarama hatası: {e}")
     return list(installed)
@@ -262,6 +271,48 @@ def get_emulators_status():
             "mods_root": mroot or "Bulunamadı"
         }
     return status
+
+def init_active_emulator():
+    global active_emulator
+    saved = ei.get_saved_active_emulator()
+    status = get_emulators_status()
+    if saved and saved in status:
+        active_emulator = saved
+        return
+    # Kayıtlı tercih yoksa sistemde kurulu olan ilk emülatörü otomatik seç
+    for emu in ["Ryujinx", "Yuzu", "Citron", "Eden"]:
+        if status.get(emu, {}).get("is_detected"):
+            active_emulator = emu
+            return
+    active_emulator = "Ryujinx"
+
+def choose_emulator_directory(emulator_id):
+    """
+    Önce PyWebView'in yerel Windows klasör seçicisini dener (ana pencereye bağlı modül olarak açılır),
+    mümkün değilse Tkinter klasör seçicisine geri döner.
+    """
+    global main_window
+    cfg = ei.get_emulator_config(emulator_id)
+    if main_window is not None:
+        try:
+            dialog_cls = getattr(webview, "FileDialog", None)
+            folder_mode = dialog_cls.FOLDER if (dialog_cls and hasattr(dialog_cls, "FOLDER")) else webview.FOLDER_DIALOG
+            start_dir = ei.resolve_data_root(emulator_id) or os.path.expanduser("~")
+            if not os.path.isdir(start_dir):
+                start_dir = os.path.expanduser("~")
+            result = main_window.create_file_dialog(folder_mode, directory=start_dir, allow_multiple=False)
+            if result:
+                chosen_path = result[0] if isinstance(result, (list, tuple)) else str(result)
+                if chosen_path and os.path.isdir(chosen_path):
+                    norm = os.path.normpath(chosen_path)
+                    if cfg:
+                        ei.save_emulator_path(cfg["id"], norm)
+                    return norm
+            return None
+        except Exception as e:
+            print(f"WebView klasör seçici uyarısı (Tkinter'a geçiliyor): {e}")
+
+    return ei.select_folder_dialog(emulator_id)
 
 def is_newer_version(remote_tag, current_ver):
     def parse_parts(v):
@@ -291,6 +342,7 @@ def is_newer_version(remote_tag, current_ver):
 @eel.expose
 def get_initial_data():
     load_favorites()
+    init_active_emulator()
     installed = scan_installed_ids(active_emulator)
     emus_status = get_emulators_status()
 
@@ -305,7 +357,10 @@ def get_initial_data():
 @eel.expose
 def set_active_emulator(emulator_id):
     global active_emulator
-    active_emulator = emulator_id
+    cfg = ei.get_emulator_config(emulator_id)
+    if cfg:
+        active_emulator = cfg["name"]
+        ei.save_active_emulator(active_emulator)
     installed = scan_installed_ids(active_emulator)
     return {
         "active_emulator": active_emulator,
@@ -325,19 +380,37 @@ def toggle_favorite(title_id):
 @eel.expose
 def open_emulator_folder(emulator_id):
     mroot = ei.resolve_mods_root(emulator_id)
-    if mroot and os.path.exists(mroot):
-        os.startfile(mroot)
+    droot = ei.resolve_data_root(emulator_id)
+    if mroot:
+        if not os.path.exists(mroot) and droot and os.path.exists(droot):
+            try:
+                os.makedirs(mroot, exist_ok=True)
+            except Exception:
+                pass
+        if os.path.exists(mroot):
+            os.startfile(mroot)
+            return True
+    if droot and os.path.exists(droot):
+        os.startfile(droot)
         return True
     return False
 
 @eel.expose
 def select_emulator_folder(emulator_id):
-    chosen = ei.select_folder_dialog(emulator_id)
+    global active_emulator
+    chosen = choose_emulator_directory(emulator_id)
+    if chosen:
+        cfg = ei.get_emulator_config(emulator_id)
+        if cfg:
+            active_emulator = cfg["name"]
+            ei.save_active_emulator(active_emulator)
     emus_status = get_emulators_status()
     installed = scan_installed_ids(active_emulator)
     return {
         "chosen": chosen is not None,
         "info": emus_status.get(emulator_id),
+        "emulators": emus_status,
+        "active_emulator": active_emulator,
         "installed_ids": installed
     }
 
@@ -411,7 +484,7 @@ def start_install(title_id, emulator_id):
     threading.Thread(target=_install_worker, args=(title_id, emulator_id), daemon=True).start()
 
 def _install_worker(title_id, emulator_id):
-    global cancel_current_download
+    global cancel_current_download, active_emulator
     cancel_current_download = False
 
     patch = next((p for p in all_patches if p.title_id.upper() == title_id.upper()), None)
@@ -419,11 +492,18 @@ def _install_worker(title_id, emulator_id):
         eel.on_install_error("Yama veritabanında bulunamadı!")
         return
 
+    cfg = ei.get_emulator_config(emulator_id) or ei.get_emulator_config(active_emulator)
+    if not cfg:
+        eel.on_install_error(f"Geçersiz emülatör seçimi: {emulator_id}")
+        return
+    target_emu_name = cfg["name"]
+
     # Emülatör klasör kontrolü
-    if not ei.resolve_mods_root(emulator_id):
-        chosen = ei.select_folder_dialog(emulator_id)
+    if not ei.resolve_mods_root(target_emu_name):
+        eel.on_install_progress(2, f"Lütfen {target_emu_name} klasörünü seçin...")
+        chosen = choose_emulator_directory(target_emu_name)
         if not chosen:
-            eel.on_install_error("Emülatör mod klasörü seçilmedi.")
+            eel.on_install_error(f"{target_emu_name} mod klasörü seçilmedi.")
             return
 
     download_url = patch.download_url
@@ -431,11 +511,12 @@ def _install_worker(title_id, emulator_id):
 
     try:
         eel.on_install_progress(5, "Sunucuya bağlanılıyor...")
-        resp = requests.get(download_url, stream=True, timeout=20)
+        resp = requests.get(download_url, stream=True, timeout=25)
         resp.raise_for_status()
 
         total_size = int(resp.headers.get("content-length", 0))
         downloaded = 0
+        last_pct = -1
 
         with open(temp_zip, "wb") as f:
             for chunk in resp.iter_content(chunk_size=65536):
@@ -452,14 +533,35 @@ def _install_worker(title_id, emulator_id):
                     if total_size > 0:
                         pct = int((downloaded / total_size) * 85)
                         pct = max(5, min(85, pct))
-                        mb_done = downloaded / (1024 * 1024)
-                        mb_tot = total_size / (1024 * 1024)
-                        status_msg = f"İndiriliyor: {mb_done:.1f} MB / {mb_tot:.1f} MB (%{pct})"
-                        eel.on_install_progress(pct, status_msg)
+                        if pct != last_pct:
+                            last_pct = pct
+                            mb_done = downloaded / (1024 * 1024)
+                            mb_tot = total_size / (1024 * 1024)
+                            status_msg = f"İndiriliyor: {mb_done:.1f} MB / {mb_tot:.1f} MB (%{pct})"
+                            eel.on_install_progress(pct, status_msg)
 
-        eel.on_install_progress(90, "Arşiv ayıklanıyor ve emülatör mod klasörüne kuruluyor...")
+        eel.on_install_progress(86, f"Arşiv ayıklanıyor ve {target_emu_name} mod klasörüne kuruluyor...")
 
-        install_res = ei.install_patch(emulator_id, title_id, temp_zip)
+        last_extract_pct = 86
+        def _on_extract_progress(copied, total, rel_dest):
+            nonlocal last_extract_pct
+            if total > 0:
+                pct = 86 + int((copied / total) * 13)
+                pct = max(86, min(99, pct))
+                if pct != last_extract_pct or copied == total:
+                    last_extract_pct = pct
+                    eel.on_install_progress(
+                        pct,
+                        f"Dosyalar çıkartılıyor ({copied}/{total}): {os.path.basename(rel_dest)}"
+                    )
+
+        install_res = ei.install_patch(
+            patch_source=temp_zip,
+            emulator_key=target_emu_name,
+            title_id=title_id,
+            progress_callback=_on_extract_progress,
+            cancel_check=lambda: cancel_current_download
+        )
 
         if os.path.exists(temp_zip):
             try:
@@ -469,6 +571,8 @@ def _install_worker(title_id, emulator_id):
 
         if install_res.get("success"):
             install_res["title_id"] = title_id
+            install_res["emulators"] = get_emulators_status()
+            install_res["active_emulator"] = target_emu_name
             eel.on_install_complete(install_res)
         else:
             err = install_res.get("error", "Bilinmeyen kurulum hatası oluştu.")
@@ -549,6 +653,7 @@ def main():
     global main_window, main_hwnd
     fetch_patches()
     load_favorites()
+    init_active_emulator()
 
     port = find_free_port()
 

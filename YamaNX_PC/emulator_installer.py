@@ -43,7 +43,7 @@ EMULATOR_CONFIGS = [
         "mods_root_relative": "load",
         "portable_dir_name": "user",
         "title_id_case": "upper",
-        "verified": False,
+        "verified": True,
         "post_install_hint": "Citron'u tamamen kapatıp yeniden başlatın. Oyuna sağ tıklayın > 'Özellikler' (Properties) > 'Eklentiler' (Add-Ons) sekmesinden 'Turkce_Yama' modunun işaretli olduğunu kontrol edin."
     },
     {
@@ -59,6 +59,7 @@ EMULATOR_CONFIGS = [
 ]
 
 DEFAULT_MOD_NAME = "Turkce_Yama"
+_HEX16_RE = re.compile(r"^[0-9a-fA-F]{16}$")
 
 def get_emulator_config(emulator_key):
     """
@@ -91,17 +92,37 @@ def load_saved_paths():
     if os.path.exists(p):
         try:
             with open(p, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
         except Exception:
             return {}
     return {}
 
 def save_emulator_path(emulator_key, custom_path):
     cfg = get_emulator_config(emulator_key)
-    if not cfg:
+    if not cfg or not custom_path:
         return False
     paths = load_saved_paths()
     paths[cfg["id"]] = os.path.normpath(custom_path)
+    try:
+        with open(get_saved_paths_file(), "w", encoding="utf-8") as f:
+            json.dump(paths, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+def get_saved_active_emulator():
+    paths = load_saved_paths()
+    saved = paths.get("_active_emulator")
+    cfg = get_emulator_config(saved)
+    return cfg["name"] if cfg else None
+
+def save_active_emulator(emulator_key):
+    cfg = get_emulator_config(emulator_key)
+    if not cfg:
+        return False
+    paths = load_saved_paths()
+    paths["_active_emulator"] = cfg["name"]
     try:
         with open(get_saved_paths_file(), "w", encoding="utf-8") as f:
             json.dump(paths, f, indent=2, ensure_ascii=False)
@@ -122,7 +143,7 @@ def select_folder_dialog(emulator_key=None, parent_title=None):
     cfg = get_emulator_config(emulator_key) if emulator_key else None
     emu_name = cfg["name"] if cfg else "Emülatör"
 
-    title = parent_title or f"Lütfen {emu_name} Veri (Data/Portable) Klasörünü Seçin"
+    title = parent_title or f"Lütfen {emu_name} Veri (Data/Portable) veya Mod Klasörünü Seçin"
 
     root = tk.Tk()
     root.withdraw()
@@ -136,7 +157,10 @@ def select_folder_dialog(emulator_key=None, parent_title=None):
                 save_emulator_path(cfg["id"], norm)
             return norm
     except Exception:
-        root.destroy()
+        try:
+            root.destroy()
+        except Exception:
+            pass
     return None
 
 # ==============================================================================
@@ -158,9 +182,13 @@ def parse_qt_config_load_directory(data_root):
             for line in f:
                 line = line.strip()
                 if line.startswith("load_directory="):
-                    val = line.split("=", 1)[1].strip()
-                    if val:
-                        norm = os.path.normpath(val)
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if not val or val.startswith("@"):
+                        continue
+                    # Qt ini dosyalarında ters bölü işaretleri çift (\\) yazılabilir
+                    val = val.replace("\\\\", "\\")
+                    norm = os.path.normpath(val)
+                    if os.path.isabs(norm) and (os.path.isdir(norm) or os.path.isdir(os.path.dirname(norm))):
                         return norm
     except Exception:
         pass
@@ -169,31 +197,38 @@ def parse_qt_config_load_directory(data_root):
 def resolve_data_root(emulator_key, exe_dir=None, prompt_if_missing=False):
     """
     Emülatörün data root klasörünü sırasıyla çözer:
-    1. Portable: <exe_dir>/<portable_dir_name>
-    2. Default: %APPDATA%/<emulator_folder>
-    3. Kaydedilmiş özel yol (emulator_paths.json)
+    1. Kullanıcının Ayarlar'dan seçip kaydettiği özel yol (emulator_paths.json) — EN YÜKSEK ÖNCELİK
+    2. Portable: <exe_dir>/<portable_dir_name>
+    3. Default: %APPDATA%/<emulator_folder> (veya %LOCALAPPDATA%/<emulator_folder>)
     4. Bulunamazsa isteğe bağlı klasör seçici (prompt_if_missing)
     """
     cfg = get_emulator_config(emulator_key)
     if not cfg:
         return None
 
-    # 1. Portable Kontrolü
+    # 1. Kullanıcının Manuel Seçtiği Klasör (En Yüksek Öncelik)
+    saved = load_saved_paths().get(cfg["id"])
+    if saved and os.path.isdir(saved):
+        return os.path.normpath(saved)
+
+    # 2. Portable Kontrolü
     if exe_dir and os.path.isdir(exe_dir):
         portable_path = os.path.join(exe_dir, cfg["portable_dir_name"])
         if os.path.isdir(portable_path):
             return os.path.normpath(portable_path)
 
-    # 2. Standart AppData Kontrolü
+    # 3. Standart AppData / LocalAppData Kontrolü
     raw_appdata = cfg.get("appdata_dir", "")
     expanded_appdata = os.path.expandvars(raw_appdata)
-    if os.path.isdir(expanded_appdata):
+    if expanded_appdata and os.path.isdir(expanded_appdata):
         return os.path.normpath(expanded_appdata)
 
-    # 3. Daha Önce Hatırlanan Klasör
-    saved = load_saved_paths().get(cfg["id"])
-    if saved and os.path.isdir(saved):
-        return os.path.normpath(saved)
+    local_appdata = os.environ.get("LOCALAPPDATA", "")
+    if local_appdata:
+        folder_name = os.path.basename(expanded_appdata) or cfg["name"]
+        local_candidate = os.path.join(local_appdata, folder_name)
+        if os.path.isdir(local_candidate):
+            return os.path.normpath(local_candidate)
 
     # 4. Kullanıcıya Sorma (Opsiyonel)
     if prompt_if_missing:
@@ -205,8 +240,10 @@ def resolve_data_root(emulator_key, exe_dir=None, prompt_if_missing=False):
 
 def resolve_mods_root(emulator_key, exe_dir=None, prompt_if_missing=False):
     """
-    Emülatörün mod kök klasörünü (mods/contents veya load) çözer.
-    qt-config.ini içindeki özel load_directory ayarını dikkate alır.
+    Emülatörün mod kök klasörünü (mods/contents veya load) akıllıca çözer.
+    Kullanıcı emülatörün ana klasörünü, portable/user klasörünü, mods klasörünü,
+    load/contents klasörünü veya yanlışlıkla bir TitleID alt klasörünü seçmiş olsa bile
+    doğru mod kök dizinini bulur.
     """
     cfg = get_emulator_config(emulator_key)
     if not cfg:
@@ -216,18 +253,54 @@ def resolve_mods_root(emulator_key, exe_dir=None, prompt_if_missing=False):
     if not data_root:
         return None
 
-    # Kullanıcı doğrudan 'load' veya 'mods\contents' seçmişse direkt kullan
-    low_data = data_root.lower()
-    if low_data.endswith("load") or low_data.endswith(r"mods\contents") or low_data.endswith("mods/contents"):
-        return data_root
+    cur = os.path.normpath(data_root)
+    base_lower = os.path.basename(cur).lower()
 
-    # Yuzu ailesi için qt-config.ini içindeki load_directory kontrolü
+    # Kullanıcı yanlışlıkla Turkce_Yama veya romfs/exefs seçtiyse yukarı çık
+    if base_lower in ("romfs", "exefs"):
+        cur = os.path.dirname(cur)
+        base_lower = os.path.basename(cur).lower()
+    if base_lower == DEFAULT_MOD_NAME.lower():
+        cur = os.path.dirname(cur)
+        base_lower = os.path.basename(cur).lower()
+
+    # Kullanıcı yanlışlıkla 16 haneli bir TitleID klasörü seçtiyse bir üst dizin mods_root'tur
+    if _HEX16_RE.match(base_lower):
+        return os.path.dirname(cur)
+
+    low_cur = cur.lower().replace("/", "\\")
+
+    # Kullanıcı doğrudan 'load', 'mods\contents' veya 'atmosphere\contents' seçmişse direkt kullan
+    if (
+        base_lower == "load"
+        or low_cur.endswith(r"\mods\contents")
+        or low_cur.endswith(r"\atmosphere\contents")
+        or base_lower == "contents"
+    ):
+        return cur
+
+    # Kullanıcı 'mods' klasörünü seçmişse (örn. Ryujinx\mods), içine 'contents' ekle
+    if base_lower == "mods":
+        return os.path.normpath(os.path.join(cur, "contents"))
+
+    # Kullanıcı emülatörün EXE dizinini seçtiyse ve içinde 'portable' veya 'user' varsa oraya gir
+    portable_sub = os.path.join(cur, cfg["portable_dir_name"])
+    if os.path.isdir(portable_sub):
+        cur = os.path.normpath(portable_sub)
+
+    # Kullanıcının seçtiği klasörde halihazırda mods\contents varsa
+    if cfg["id"] == "ryujinx":
+        existing_mc = os.path.join(cur, "mods", "contents")
+        if os.path.isdir(existing_mc):
+            return os.path.normpath(existing_mc)
+
+    # Yuzu ailesi için qt-config.ini içindeki özel load_directory kontrolü
     if cfg["id"] in ("yuzu", "citron", "eden"):
-        custom_load = parse_qt_config_load_directory(data_root)
+        custom_load = parse_qt_config_load_directory(cur)
         if custom_load:
             return custom_load
 
-    return os.path.normpath(os.path.join(data_root, cfg["mods_root_relative"]))
+    return os.path.normpath(os.path.join(cur, cfg["mods_root_relative"]))
 
 def format_title_id(title_id, emulator_key):
     """
@@ -289,24 +362,14 @@ def check_patch_installed(emulator_key, title_id, mod_name=DEFAULT_MOD_NAME, exe
                 return True
         return False
 
-    has_romfs = False
-    has_exefs = False
+    for sub in ("romfs", "exefs"):
+        sub_dir = os.path.join(target_path, sub)
+        if os.path.isdir(sub_dir):
+            for _, _, files in os.walk(sub_dir):
+                if files:
+                    return True
 
-    romfs_dir = os.path.join(target_path, "romfs")
-    if os.path.isdir(romfs_dir):
-        for root, dirs, files in os.walk(romfs_dir):
-            if files:
-                has_romfs = True
-                break
-
-    exefs_dir = os.path.join(target_path, "exefs")
-    if os.path.isdir(exefs_dir):
-        for root, dirs, files in os.walk(exefs_dir):
-            if files:
-                has_exefs = True
-                break
-
-    return has_romfs or has_exefs
+    return False
 
 # ==============================================================================
 # 5. TEMİZLEME VE DOSYA BULMA YARDIMCILARI
@@ -330,24 +393,49 @@ def clean_reinstall(target_dir):
 
 def _norm_path(p):
     p = p.replace("\\", "/")
-    while p.startswith("/"):  p = p[1:]
-    while p.startswith("./"): p = p[2:]
+    while p.startswith("/"):
+        p = p[1:]
+    while p.startswith("./"):
+        p = p[2:]
     return p
+
+def _extract_rel_dest(parts, parts_lower):
+    idx_romfs = parts_lower.index("romfs") if "romfs" in parts_lower else -1
+    idx_exefs_patches = parts_lower.index("exefs_patches") if "exefs_patches" in parts_lower else -1
+    idx_exefs = parts_lower.index("exefs") if "exefs" in parts_lower else -1
+
+    # exefs_patches içindeki .ips / .pchtxt dosyaları emülatörlerde doğrudan exefs/<dosya_adı> altına kurulmalıdır
+    if idx_exefs_patches != -1 and (idx_romfs == -1 or idx_exefs_patches < idx_romfs):
+        if len(parts) > idx_exefs_patches + 1:
+            filename = parts[-1]
+            if filename and not filename.startswith("."):
+                return f"exefs/{filename}"
+
+    if idx_romfs != -1 and (idx_exefs == -1 or idx_romfs < idx_exefs):
+        if len(parts) > idx_romfs + 1:
+            return "/".join(["romfs"] + parts[idx_romfs + 1:])
+    elif idx_exefs != -1:
+        if len(parts) > idx_exefs + 1:
+            filename = parts[-1]
+            if filename.lower().endswith((".ips", ".ips32", ".pchtxt")):
+                return f"exefs/{filename}"
+            return "/".join(["exefs"] + parts[idx_exefs + 1:])
+    return None
 
 def discover_patch_files(patch_source, title_id=None):
     """
-    Bir ZIP arşivi veya klasör içerisindeki 'romfs' ve 'exefs' dosyalarını tespit eder.
+    Bir ZIP arşivi veya klasör içerisindeki 'romfs', 'exefs' ve 'exefs_patches' dosyalarını tespit eder.
     Dönen liste elemanları:
       (source_ref, relative_dest_path, file_size)
-    Örnek:
-      ('atmosphere/contents/.../romfs/Data/text.bin', 'romfs/Data/text.bin', 1024)
     """
-    discovered = []
     tid_filter = title_id.lower() if title_id else None
 
     # ZIP ARŞİVİ
     if os.path.isfile(patch_source) and zipfile.is_zipfile(patch_source):
         with zipfile.ZipFile(patch_source, "r") as zf:
+            raw_items = []
+            has_target_tid = False
+
             for info in zf.infolist():
                 if info.is_dir() or info.filename.endswith("/"):
                     continue
@@ -356,27 +444,29 @@ def discover_patch_files(patch_source, title_id=None):
                 parts = [p for p in norm.split("/") if p]
                 parts_lower = [p.lower() for p in parts]
 
-                # Eğer arşiv birden fazla title ID içeriyorsa ve spesifik title_id verildiyse filtrele
-                if tid_filter:
-                    contains_tid = any(p == tid_filter for p in parts_lower)
-                    # Arşivde title ID geçen başka oyunlar varsa onları atla
-                    other_tids = [p for p in parts_lower if len(p) == 16 and all(c in "0123456789abcdef" for c in p)]
-                    if other_tids and not contains_tid:
-                        continue
+                if "__macosx" in parts_lower or parts_lower[-1] == ".ds_store":
+                    continue
 
-                # romfs veya exefs klasörünü tespit et
-                idx_romfs = parts_lower.index("romfs") if "romfs" in parts_lower else -1
-                idx_exefs = parts_lower.index("exefs") if "exefs" in parts_lower else -1
+                rel_dest = _extract_rel_dest(parts, parts_lower)
+                if not rel_dest:
+                    continue
 
-                if idx_romfs != -1 and (idx_exefs == -1 or idx_romfs < idx_exefs):
-                    rel_dest = "/".join(parts[idx_romfs:])
-                    discovered.append((info, rel_dest, info.file_size))
-                elif idx_exefs != -1:
-                    rel_dest = "/".join(parts[idx_exefs:])
-                    discovered.append((info, rel_dest, info.file_size))
+                entry_tids = [p for p in parts_lower if _HEX16_RE.match(p)]
+                if tid_filter and tid_filter in entry_tids:
+                    has_target_tid = True
+
+                raw_items.append(((info, rel_dest, info.file_size), entry_tids))
+
+            if tid_filter and has_target_tid:
+                # Title ID içermeyen ortak klasörleri (örn. TitleID yanındaki exefs_patches) ve hedef Title ID'yi al
+                return [item for item, tids in raw_items if (not tids) or (tid_filter in tids)]
+            return [item for item, _ in raw_items]
 
     # KLASÖR
     elif os.path.isdir(patch_source):
+        raw_items = []
+        has_target_tid = False
+
         for root, dirs, files in os.walk(patch_source):
             for file_name in files:
                 full_path = os.path.join(root, file_name)
@@ -384,25 +474,25 @@ def discover_patch_files(patch_source, title_id=None):
                 parts = [p for p in rel_from_source.split("/") if p]
                 parts_lower = [p.lower() for p in parts]
 
-                if tid_filter:
-                    contains_tid = any(p == tid_filter for p in parts_lower)
-                    other_tids = [p for p in parts_lower if len(p) == 16 and all(c in "0123456789abcdef" for c in p)]
-                    if other_tids and not contains_tid:
-                        continue
+                if "__macosx" in parts_lower or parts_lower[-1] == ".ds_store":
+                    continue
 
-                idx_romfs = parts_lower.index("romfs") if "romfs" in parts_lower else -1
-                idx_exefs = parts_lower.index("exefs") if "exefs" in parts_lower else -1
+                rel_dest = _extract_rel_dest(parts, parts_lower)
+                if not rel_dest:
+                    continue
 
-                if idx_romfs != -1 and (idx_exefs == -1 or idx_romfs < idx_exefs):
-                    rel_dest = "/".join(parts[idx_romfs:])
-                    size = os.path.getsize(full_path)
-                    discovered.append((full_path, rel_dest, size))
-                elif idx_exefs != -1:
-                    rel_dest = "/".join(parts[idx_exefs:])
-                    size = os.path.getsize(full_path)
-                    discovered.append((full_path, rel_dest, size))
+                size = os.path.getsize(full_path)
+                entry_tids = [p for p in parts_lower if _HEX16_RE.match(p)]
+                if tid_filter and tid_filter in entry_tids:
+                    has_target_tid = True
 
-    return discovered
+                raw_items.append(((full_path, rel_dest, size), entry_tids))
+
+        if tid_filter and has_target_tid:
+            return [item for item, tids in raw_items if (not tids) or (tid_filter in tids)]
+        return [item for item, _ in raw_items]
+
+    return []
 
 # ==============================================================================
 # 6. YAMA KURULUMU (INSTALL PATCH)
@@ -419,14 +509,19 @@ def install_patch(
 ):
     """
     Yamayı hedef emülatörün ilgili klasörüne kurar.
-
-    Algoritma:
-    1. Emülatör çözümlenir ve hedef Turkce_Yama yolu belirlenir.
-    2. Varsa eski Turkce_Yama klasörü tamamen silinir (temiz kurulum).
-    3. romfs ve/veya exefs dosyaları kopyalanır / çıkartılır.
-    4. Kurulum doğrulanır (en az bir romfs/exefs ve tam dosya sayısı).
-    5. Kullanıcıya kapatıp açma ve kontrol yönergeleri döndürülür.
+    Hem (patch_source, emulator_key, title_id) hem de eski (emulator_key, title_id, patch_source)
+    çağrı sıralamasını otomatik algılar ve destekler.
     """
+    # Otomatik parametre sırası koruması:
+    # Eğer ilk argüman bir emülatör adıysa (örn: install_patch(emulator_id, title_id, temp_zip))
+    if get_emulator_config(patch_source) is not None and get_emulator_config(emulator_key) is None:
+        actual_emulator_key = patch_source
+        actual_title_id = emulator_key
+        actual_patch_source = title_id
+        patch_source = actual_patch_source
+        emulator_key = actual_emulator_key
+        title_id = actual_title_id
+
     cfg = get_emulator_config(emulator_key)
     if not cfg:
         return {
@@ -439,7 +534,7 @@ def install_patch(
     if not target_dir:
         return {
             "success": False,
-            "error": f"{cfg['name']} veri klasörü veya mod yolu tespit edilemedi. Lütfen ayarları kontrol edin.",
+            "error": f"{cfg['name']} veri klasörü veya mod yolu tespit edilemedi. Lütfen Ayarlar sekmesinden klasörü seçin.",
             "post_install_hint": ""
         }
 
@@ -487,7 +582,7 @@ def install_patch(
                     os.makedirs(os.path.dirname(dest_file_path), exist_ok=True)
 
                     with zf.open(info_obj) as src_f, open(dest_file_path, "wb") as dst_f:
-                        shutil.copyfileobj(src_f, dst_f)
+                        shutil.copyfileobj(src_f, dst_f, length=1024 * 1024)
 
                     copied_count += 1
                     if progress_callback:
@@ -522,32 +617,23 @@ def install_patch(
         }
 
     # 3. Doğrulama (Verification)
-    # Hedef klasörde romfs veya exefs var mı ve dosya sayıları uyuşuyor mu?
     verified_files = 0
     has_romfs = False
     has_exefs = False
 
     for root, dirs, files in os.walk(target_dir):
-        rel_root = _norm_path(os.path.relpath(root, target_dir))
+        rel_root = _norm_path(os.path.relpath(root, target_dir)).lower()
         if rel_root.startswith("romfs") and files:
             has_romfs = True
         if rel_root.startswith("exefs") and files:
             has_exefs = True
         verified_files += len(files)
 
-    if not (has_romfs or has_exefs):
+    if not (has_romfs or has_exefs) or verified_files == 0:
         clean_reinstall(target_dir)
         return {
             "success": False,
-            "error": "HATA: Doğrulama başarısız! Hedefte 'romfs' veya 'exefs' klasörü bulunamadı.",
-            "post_install_hint": ""
-        }
-
-    if verified_files != total_files:
-        clean_reinstall(target_dir)
-        return {
-            "success": False,
-            "error": f"HATA: Dosya doğrulama başarısız! Beklenen: {total_files}, Hedefte bulunan: {verified_files}",
+            "error": "HATA: Doğrulama başarısız! Hedefte 'romfs' veya 'exefs' dosyaları oluşturulamadı.",
             "post_install_hint": ""
         }
 
